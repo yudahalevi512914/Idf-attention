@@ -35,6 +35,7 @@ button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);
 .pick:active{box-shadow:none}
 .hint{margin:16px 0 0;font-weight:600}
 .danger{color:var(--bad);border-color:var(--bad);margin-top:6px;width:100%}
+.rm{padding:4px 10px;font-size:13px;margin-inline-start:10px}
 .msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
 .stats{display:flex;gap:12px;margin:18px 0}
 .stat{flex:1;text-align:center;padding:14px;border-radius:18px;font-weight:600;color:var(--mut)}
@@ -91,9 +92,16 @@ const call = async (qs,body) => {
   const r = await fetch("/api/attendance"+qs, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
   if(!r.ok){
     const j=await r.json().catch(()=>({}));
-    throw new Error(r.status===401?"קוד שגוי":j.detail==="no_blob_token"?"שגיאת שרת: מאגר ה-Blob לא מחובר לפרויקט":"שגיאת שרת"+(j.detail?" ("+j.detail+")":r.status===404?" (api לא נמצא)":""));
+    const e=new Error(r.status===401?"קוד שגוי":j.detail==="no_blob_token"?"שגיאת שרת: מאגר ה-Blob לא מחובר לפרויקט":"שגיאת שרת"+(j.detail?" ("+j.detail+")":r.status===404?" (api לא נמצא)":""));
+    e.status=r.status; e.data=j; throw e;
   }
-  return r.json();
+  return r;
+};
+const jcall = async (qs,body) => (await call(qs,body)).json();
+const devId = () => {
+  let d=ls.get("dev")||(document.cookie.match(/(?:^|; )dev=([\w-]+)/)||[])[1];
+  if(!d) d=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(16)+Math.random().toString(16).slice(2)+Math.random().toString(16).slice(2));
+  ls.set("dev",d); document.cookie="dev="+d+";max-age=31536000;path=/;SameSite=Lax"; return d;
 };
 const ls = {get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -103,11 +111,12 @@ window.addEventListener("hashchange",render);
 
 async function member(){
   const saved=ls.get("name");
-  let info={present:false,activity:""}; try{ info=await call(`?name=${encodeURIComponent(saved||"")}`); }catch(e){}
+  let info={present:false,activity:"",deviceName:""}; try{ info=await jcall(`?name=${encodeURIComponent(saved||"")}&dev=${devId()}`); }catch(e){}
   const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">${info.activity?esc(info.activity):"דיווח נוכחות"}</div></header>`;
-  if(saved && info.present){
-    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(saved)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף.</p><button class="sec" id="other">זה לא אני</button></div>`;
-    document.getElementById("other").onclick=()=>{ls.set("name","");member()};
+  const who=info.deviceName||(info.present&&saved)||"";
+  if(who){
+    ls.set("name",who);
+    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(who)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף. אם נרשמת בטעות, פנה למנהל.</p></div>`;
     return confetti();
   }
   form(head,saved||"");
@@ -138,7 +147,7 @@ function form(head,name){
   <datalist id="r">${ROSTER.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
   <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div id="ch"></div><div class="msg" id="m"></div></div>`;
   const m=document.getElementById("m"), ch=document.getElementById("ch");
-  const submit=async n=>{ try{ await call("",{name:n}); ls.set("name",n); member(); } catch(e){ m.textContent=e.message; } };
+  const submit=async n=>{ try{ await jcall("",{name:n,dev:devId()}); ls.set("name",n); member(); } catch(e){ if(e.status===409&&e.data?.name){ ls.set("name",e.data.name); member(); } else m.textContent=e.message; } };
   const choices=(title,names,extra)=>{
     ch.innerHTML=`<p class="hint">${title}</p>`+names.map((n,i)=>`<button class="pick" data-i="${i}">${esc(n)}</button>`).join("")+(extra?`<button class="sec" style="margin-top:10px" id="asis">רשמו אותי כמו שכתבתי</button>`:"");
     ch.querySelectorAll(".pick").forEach(b=>b.onclick=()=>submit(names[b.dataset.i]));
@@ -157,33 +166,15 @@ function form(head,name){
 
 }
 
-const loadScript=src=>new Promise((ok,no)=>{ if(window.html2pdf) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>no(new Error("טעינת ספריית ה-PDF נכשלה")); document.head.appendChild(s); });
 async function makePdf(pin,btn){
   const old=btn.textContent; btn.textContent="מכין…";
   try{
-    const {date,reports}=await call(`?pin=${encodeURIComponent(pin)}&report=1`);
-    if(!reports.length){ alert("אין עדיין פעילויות שנשמרו להיום. כדי להכניס פעילות לדוח צריך לאפס אותה."); return; }
-    const per={}; reports.forEach(r=>r.missing.forEach(n=>{(per[n]=per[n]||[]).push(r.activity)}));
-    const rows=Object.entries(per).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0],"he"));
-    const tm=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
-    const label=new Date(date+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-    const td="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right";
-    const el=document.createElement("div"); el.dir="rtl";
-    el.style.cssText="position:fixed;top:0;left:0;width:720px;background:#fff;color:#111;z-index:-1;padding:24px;font-family:Heebo,Arial,sans-serif;line-height:1.5";
-    el.innerHTML=`<h1 style="margin:0;font-size:26px">יודה נוכחות · סיכום חוסרים</h1>
-    <div style="color:#555;margin-bottom:16px">${label} · ${reports.length} פעילויות</div>
-    <h2 style="font-size:19px;border-bottom:2px solid #1e8a5a;padding-bottom:4px">חסרים לפי אדם</h2>
-    ${rows.length?`<table style="width:100%;border-collapse:collapse;font-size:15px"><tr style="background:#f1f1f1"><th style="${td}">שם</th><th style="${td}">חיסורים</th><th style="${td}">פעילויות</th></tr>`+rows.map(([n,a])=>`<tr style="page-break-inside:avoid"><td style="${td}">${esc(n)}</td><td style="${td}">${a.length}</td><td style="${td}">${a.map(esc).join(", ")}</td></tr>`).join("")+`</table>`:`<p>אף אחד לא חסר 🎉</p>`}
-    <h2 style="font-size:19px;border-bottom:2px solid #1e8a5a;padding-bottom:4px;margin-top:22px">פירוט לפי פעילות</h2>`+
-    reports.map(r=>`<div style="margin:12px 0;page-break-inside:avoid"><b style="font-size:16px">${esc(r.activity)}</b> <span style="color:#666">· ${tm(r.t)} · הגיעו ${r.present.length}, חסרים ${r.missing.length}</span>
-      <div style="font-size:14px;margin-top:4px">${r.missing.length?"חסרים: "+r.missing.map(esc).join(", "):"כולם הגיעו"}</div>
-      ${r.extra.length?`<div style="font-size:13px;color:#777">לא ברשימה: ${r.extra.map(esc).join(", ")}</div>`:""}</div>`).join("");
-    document.body.appendChild(el);
-    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js");
-    if(document.fonts) await document.fonts.ready;
-    await html2pdf().set({margin:10,filename:`attendance-${date}.pdf`,image:{type:"jpeg",quality:.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"]}}).from(el).save();
-    el.remove();
-  }catch(e){ document.querySelectorAll("body > div[dir=rtl]").forEach(x=>x.remove()); alert("יצירת ה-PDF נכשלה: "+e.message); }
+    const r=await call(`?pin=${encodeURIComponent(pin)}&report=1`);
+    if((r.headers.get("content-type")||"").includes("json")){ alert("אין עדיין פעילויות שנשמרו להיום. כדי להכניס פעילות לדוח צריך לסיים אותה ולאפס."); return; }
+    const url=URL.createObjectURL(await r.blob());
+    const a=document.createElement("a"); a.href=url; a.download="attendance.pdf"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){ alert("יצירת ה-PDF נכשלה: "+e.message); }
   finally{ btn.textContent=old; }
 }
 
@@ -194,7 +185,7 @@ async function admin(){
   }
   const pin=sessionStorage.getItem("pin");
   app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">טוען…</div></header>`;
-  let data={}; try{ data=await call(`?pin=${encodeURIComponent(pin)}`); }catch(e){ sessionStorage.clear(); app.innerHTML=`<div class="card">${esc(e.message)} <button class="sec" onclick="location.reload()">נסה שוב</button></div>`; return; }
+  let data={}; try{ data=await jcall(`?pin=${encodeURIComponent(pin)}`); }catch(e){ sessionStorage.clear(); app.innerHTML=`<div class="card">${esc(e.message)} <button class="sec" onclick="location.reload()">נסה שוב</button></div>`; return; }
   const here=data.list.sort((a,b)=>a.t-b.t);
   const hereKeys=new Set(here.map(h=>norm(h.name)));
   const missing=ROSTER.filter(r=>!hereKeys.has(norm(r)));
@@ -208,16 +199,20 @@ async function admin(){
   <div class="bar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
-    <h3>✅ נוכחים</h3><ul>${here.map(h=>`<li>${esc(h.name)}<small>${time(h.t)}</small></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
+    <h3>✅ נוכחים</h3><ul>${here.map((h,i)=>`<li><span>${esc(h.name)}</span><span><small>${time(h.t)}</small><button class="sec rm" data-i="${i}">הסר</button></span></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
     ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
     ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
     <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
   </div>`;
   document.getElementById("rf").onclick=admin;
-  document.getElementById("sv").onclick=async()=>{ try{ await call("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
+  document.querySelectorAll(".rm").forEach(b=>b.onclick=async()=>{
+    const n=here[b.dataset.i].name; if(!confirm(`להסיר את ${n} מהרשימה? המכשיר שלו יוכל לדווח שוב.`)) return;
+    try{ await jcall("",{action:"remove",pin,name:n}); admin(); }catch(e){ alert(e.message); }
+  });
+  document.getElementById("sv").onclick=async()=>{ try{ await jcall("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
   document.getElementById("rs").onclick=async()=>{
     if(!confirm(`לסיים את "${data.activity||"הפעילות"}", לשמור את החסרים לדוח היומי ולאפס את הרשימה?`)) return;
-    try{ await call("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
+    try{ await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
   };
   document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
   document.getElementById("cp").onclick=()=>{
