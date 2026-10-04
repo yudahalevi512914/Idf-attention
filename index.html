@@ -96,22 +96,21 @@ const call = async (qs,body) => {
   return r.json();
 };
 const ls = {get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
-const esc = s => s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function render(){ location.hash==="#admin" ? admin() : member(); }
 window.addEventListener("hashchange",render);
 
 async function member(){
   const saved=ls.get("name");
-  const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">דיווח נוכחות</div></header>`;
-  if(saved){
-    app.innerHTML=head+`<div class="card done"><div class="big">⏳</div></div>`;
-    let present=false; try{ present=(await call(`?name=${encodeURIComponent(saved)}`)).present; }catch(e){}
-    if(present) return app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(saved)}, רשמנו אותך!</h2><p>נתראה באימון. אין צורך לעשות שום דבר נוסף.</p><button class="sec" id="other">זה לא אני</button></div>`,
-      document.getElementById("other").onclick=()=>{ls.set("name","");member()}, confetti();
-    return form(head,saved);
+  let info={present:false,activity:""}; try{ info=await call(`?name=${encodeURIComponent(saved||"")}`); }catch(e){}
+  const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">${info.activity?esc(info.activity):"דיווח נוכחות"}</div></header>`;
+  if(saved && info.present){
+    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(saved)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף.</p><button class="sec" id="other">זה לא אני</button></div>`;
+    document.getElementById("other").onclick=()=>{ls.set("name","");member()};
+    return confetti();
   }
-  form(head,"");
+  form(head,saved||"");
 }
 function confetti(){
   const e=["🎉","✨","⭐","🎊","💚","🟡"];
@@ -158,6 +157,36 @@ function form(head,name){
 
 }
 
+const loadScript=src=>new Promise((ok,no)=>{ if(window.html2pdf) return ok(); const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=()=>no(new Error("טעינת ספריית ה-PDF נכשלה")); document.head.appendChild(s); });
+async function makePdf(pin,btn){
+  const old=btn.textContent; btn.textContent="מכין…";
+  try{
+    const {date,reports}=await call(`?pin=${encodeURIComponent(pin)}&report=1`);
+    if(!reports.length){ alert("אין עדיין פעילויות שנשמרו להיום. כדי להכניס פעילות לדוח צריך לאפס אותה."); return; }
+    const per={}; reports.forEach(r=>r.missing.forEach(n=>{(per[n]=per[n]||[]).push(r.activity)}));
+    const rows=Object.entries(per).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0],"he"));
+    const tm=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
+    const label=new Date(date+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    const td="padding:6px 8px;border-bottom:1px solid #ddd;text-align:right";
+    const el=document.createElement("div"); el.dir="rtl";
+    el.style.cssText="position:fixed;top:0;left:0;width:720px;background:#fff;color:#111;z-index:-1;padding:24px;font-family:Heebo,Arial,sans-serif;line-height:1.5";
+    el.innerHTML=`<h1 style="margin:0;font-size:26px">יודה נוכחות · סיכום חוסרים</h1>
+    <div style="color:#555;margin-bottom:16px">${label} · ${reports.length} פעילויות</div>
+    <h2 style="font-size:19px;border-bottom:2px solid #1e8a5a;padding-bottom:4px">חסרים לפי אדם</h2>
+    ${rows.length?`<table style="width:100%;border-collapse:collapse;font-size:15px"><tr style="background:#f1f1f1"><th style="${td}">שם</th><th style="${td}">חיסורים</th><th style="${td}">פעילויות</th></tr>`+rows.map(([n,a])=>`<tr style="page-break-inside:avoid"><td style="${td}">${esc(n)}</td><td style="${td}">${a.length}</td><td style="${td}">${a.map(esc).join(", ")}</td></tr>`).join("")+`</table>`:`<p>אף אחד לא חסר 🎉</p>`}
+    <h2 style="font-size:19px;border-bottom:2px solid #1e8a5a;padding-bottom:4px;margin-top:22px">פירוט לפי פעילות</h2>`+
+    reports.map(r=>`<div style="margin:12px 0;page-break-inside:avoid"><b style="font-size:16px">${esc(r.activity)}</b> <span style="color:#666">· ${tm(r.t)} · הגיעו ${r.present.length}, חסרים ${r.missing.length}</span>
+      <div style="font-size:14px;margin-top:4px">${r.missing.length?"חסרים: "+r.missing.map(esc).join(", "):"כולם הגיעו"}</div>
+      ${r.extra.length?`<div style="font-size:13px;color:#777">לא ברשימה: ${r.extra.map(esc).join(", ")}</div>`:""}</div>`).join("");
+    document.body.appendChild(el);
+    await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js");
+    if(document.fonts) await document.fonts.ready;
+    await html2pdf().set({margin:10,filename:`attendance-${date}.pdf`,image:{type:"jpeg",quality:.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},pagebreak:{mode:["css","legacy"]}}).from(el).save();
+    el.remove();
+  }catch(e){ document.querySelectorAll("body > div[dir=rtl]").forEach(x=>x.remove()); alert("יצירת ה-PDF נכשלה: "+e.message); }
+  finally{ btn.textContent=old; }
+}
+
 async function admin(){
   if(sessionStorage.getItem("ok")!=="1"){
     const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
@@ -173,22 +202,26 @@ async function admin(){
   const time=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
   const pct=ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0;
   app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול</div></header>
-  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button></div>
-  <div class="bar"><i style="width:${pct}%"></i></div>
+  <div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 10px">שם הפעילות</h3>
+    <div class="row"><input id="act" value="${esc(data.activity||"")}" placeholder="למשל: אימון בוקר" style="flex:1"><button class="sec" id="sv">שמור</button></div></div>
+  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button></div>
+  <div class="bar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
     <h3>✅ נוכחים</h3><ul>${here.map(h=>`<li>${esc(h.name)}<small>${time(h.t)}</small></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
     ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
     ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
-    <button class="sec danger" id="rs">🗑️ אפס את הרשימה</button>
+    <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
   </div>`;
   document.getElementById("rf").onclick=admin;
+  document.getElementById("sv").onclick=async()=>{ try{ await call("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
   document.getElementById("rs").onclick=async()=>{
-    if(!confirm("למחוק את כל הדיווחים ולהתחיל מחדש? אי אפשר לשחזר.")) return;
-    try{ await call("",{action:"reset",pin}); admin(); }catch(e){ alert(e.message); }
+    if(!confirm(`לסיים את "${data.activity||"הפעילות"}", לשמור את החסרים לדוח היומי ולאפס את הרשימה?`)) return;
+    try{ await call("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
   };
+  document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
   document.getElementById("cp").onclick=()=>{
-    const t=`נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
+    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
   };
 }
