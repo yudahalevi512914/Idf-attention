@@ -28,6 +28,9 @@ button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);
 .done .big{font-size:64px;display:inline-block;animation:pop .6s cubic-bezier(.3,1.6,.5,1) both}
 @keyframes pop{from{transform:scale(0) rotate(-30deg)}}
 .done p{color:var(--mut);margin:4px 0 16px}
+.warn{display:flex;gap:10px;align-items:center;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--badbg);border:2px dashed var(--bad);color:var(--bad);font-size:15px;line-height:1.4;animation:pulse 2.4s ease-in-out infinite}
+.warn span{font-size:28px}.warn em{font-weight:800}
+@keyframes pulse{50%{transform:scale(1.02);box-shadow:0 0 0 6px rgba(217,84,30,.12)}}
 .msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
 .stats{display:flex;gap:12px;margin:18px 0}
 .stat{flex:1;text-align:center;padding:14px;border-radius:18px;font-weight:600;color:var(--mut)}
@@ -110,10 +113,10 @@ function confetti(){
     c.style.left=Math.random()*100+"vw";c.style.animationDelay=Math.random()*.6+"s";document.body.appendChild(c);setTimeout(()=>c.remove(),3200);}
 }
 function form(head,name){
-  app.innerHTML=head+`<div class="card"><h2>היי! מי מגיע היום? 👋</h2>
+  app.innerHTML=head+`<div class="card"><h2>האם אתה פה עכשיו? 👀</h2>
   <input id="n" list="r" value="${esc(name)}" placeholder="שם מלא, אפשר להתחיל להקליד" autocomplete="off">
   <datalist id="r">${ROSTER.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
-  <button id="go">אני פה! ✋</button><div class="msg" id="m"></div></div>`;
+  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div class="msg" id="m"></div></div>`;
   document.getElementById("go").onclick=async()=>{
     const n=document.getElementById("n").value.trim().replace(/\s+/g," "), m=document.getElementById("m");
     if(n.length<2) return m.textContent="נשכח לכתוב את השם 🙂";
