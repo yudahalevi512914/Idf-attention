@@ -31,6 +31,10 @@ button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);
 .warn{display:flex;gap:10px;align-items:center;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--badbg);border:2px dashed var(--bad);color:var(--bad);font-size:15px;line-height:1.4;animation:pulse 2.4s ease-in-out infinite}
 .warn span{font-size:28px}.warn em{font-weight:800}
 @keyframes pulse{50%{transform:scale(1.02);box-shadow:0 0 0 6px rgba(217,84,30,.12)}}
+.pick{background:var(--bg);color:var(--ink);border:2px solid var(--line);box-shadow:none;font-size:18px;padding:12px;margin-top:8px}
+.pick:active{box-shadow:none}
+.hint{margin:16px 0 0;font-weight:600}
+.danger{color:var(--bad);border-color:var(--bad);margin-top:6px;width:100%}
 .msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
 .stats{display:flex;gap:12px;margin:18px 0}
 .stat{flex:1;text-align:center;padding:14px;border-radius:18px;font-weight:600;color:var(--mut)}
@@ -116,17 +120,44 @@ function confetti(){
   for(let i=0;i<26;i++){const c=document.createElement("span");c.className="conf";c.textContent=e[i%e.length];
     c.style.left=Math.random()*100+"vw";c.style.animationDelay=Math.random()*.6+"s";document.body.appendChild(c);setTimeout(()=>c.remove(),3200);}
 }
+const strip=s=>s.replace(/[׳'’`"״\u0591-\u05C7]/g,"").trim();
+const toks=s=>strip(s).split(/\s+/).filter(Boolean);
+const lev=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>[i,...Array(b.length).fill(0)]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length]};
+const tokDist=(t,r)=>{ if(t===r) return 0; if(t.length>=3&&r.startsWith(t)) return .5; const lim=t.length<=3?0:t.length<=5?1:2; const x=lev(t,r); return x<=lim?x:null; };
+function resolve(input){
+  const T=toks(input), scored=[];
+  ROSTER.forEach(name=>{
+    const R=toks(name); let total=0, ok=true;
+    for(const t of T){ let best=null,bi=-1; R.forEach((x,i)=>{const d=tokDist(t,x); if(d!==null&&(best===null||d<best)){best=d;bi=i}}); if(best===null){ok=false;break} total+=best; R.splice(bi,1); }
+    if(ok) scored.push({name,total});
+  });
+  if(scored.length){ const min=Math.min(...scored.map(x=>x.total)); return {matches:scored.filter(x=>x.total===min).map(x=>x.name),sugg:[]}; }
+  const sugg=ROSTER.map(name=>({name,d:Math.min(...toks(name).flatMap(r=>T.map(t=>lev(t,r)/Math.max(t.length,r.length))))})).filter(x=>x.d<=.5).sort((a,b)=>a.d-b.d).slice(0,3).map(x=>x.name);
+  return {matches:[],sugg};
+}
 function form(head,name){
   app.innerHTML=head+`<div class="card"><h2>האם אתה פה עכשיו? 👀</h2>
   <input id="n" list="r" value="${esc(name)}" placeholder="שם מלא, אפשר להתחיל להקליד" autocomplete="off">
   <datalist id="r">${ROSTER.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
-  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div class="msg" id="m"></div></div>`;
-  document.getElementById("go").onclick=async()=>{
-    const n=document.getElementById("n").value.trim().replace(/\s+/g," "), m=document.getElementById("m");
-    if(n.length<2) return m.textContent="נשכח לכתוב את השם 🙂";
-    try{ await call("",{name:n}); ls.set("name",n); member(); }
-    catch(e){ m.textContent=e.message; }
+  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div id="ch"></div><div class="msg" id="m"></div></div>`;
+  const m=document.getElementById("m"), ch=document.getElementById("ch");
+  const submit=async n=>{ try{ await call("",{name:n}); ls.set("name",n); member(); } catch(e){ m.textContent=e.message; } };
+  const choices=(title,names,extra)=>{
+    ch.innerHTML=`<p class="hint">${title}</p>`+names.map((n,i)=>`<button class="pick" data-i="${i}">${esc(n)}</button>`).join("")+(extra?`<button class="sec" style="margin-top:10px" id="asis">רשמו אותי כמו שכתבתי</button>`:"");
+    ch.querySelectorAll(".pick").forEach(b=>b.onclick=()=>submit(names[b.dataset.i]));
+    if(extra) document.getElementById("asis").onclick=()=>submit(extra);
   };
+  document.getElementById("go").onclick=()=>{
+    const n=norm(document.getElementById("n").value); m.textContent=""; ch.innerHTML="";
+    if(n.length<2) return m.textContent="נשכח לכתוב את השם 🙂";
+    if(!ROSTER.length) return submit(n);
+    const r=resolve(n);
+    if(r.matches.length===1) return submit(r.matches[0]);
+    if(r.matches.length>1) return choices("יש כמה כאלה, מי אתה?",r.matches);
+    if(r.sugg.length) return choices("לא מצאנו בדיוק. אולי התכוונת ל…",r.sugg,n);
+    choices("לא מצאנו את השם ברשימה. בדוק את הכתיב, או:",[],n);
+  };
+
 }
 
 async function admin(){
@@ -147,9 +178,13 @@ async function admin(){
   <div class="bar"><i style="width:${ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0}%"></i></div><div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card"><h3>✅ נוכחים</h3><ul>${here.map(h=>`<li>${esc(h.name)}<small>${time(h.t)}</small></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
   ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
-  ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}</div>`;
+  ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}</di<button class="sec danger" id="rs">🗑️ אפס את הרשימה ליום הזה</button></div>`;
   document.getElementById("dt").onchange=e=>{admin.d=e.target.value;admin()};
   document.getElementById("rf").onclick=admin;
+  document.getElementById("rs").onclick=async()=>{
+    if(!confirm("למחוק את כל הדיווחים של "+nice(d)+"? אי אפשר לשחזר.")) return;
+    try{ await call("",{action:"reset",pin:sessionStorage.getItem("pin"),date:d}); admin(); }catch(e){ alert(e.message); }
+  };
   document.getElementById("cp").onclick=()=>{
     const t=`נוכחות ${nice(d)}\n\nנוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
