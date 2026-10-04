@@ -11,7 +11,12 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const name = norm(req.body?.name);
       if (name.length < 2 || name.length > 60) return res.status(400).json({ error: "bad name" });
-      await put(path(today(), name), "1", { access: "public", addRandomSuffix: false, allowOverwrite: true });
+      const opts = { addRandomSuffix: false, allowOverwrite: true };
+      try { await put(path(today(), name), "1", { ...opts, access: "public" }); }
+      catch (e) {
+        if (!/private/i.test(String(e?.message))) throw e;
+        await put(path(today(), name), "1", { ...opts, access: "private" });
+      }
       return res.json({ ok: true });
     }
     const { date, name, pin } = req.query;
@@ -27,6 +32,8 @@ export default async function handler(req, res) {
       list: blobs.map(b => ({ name: decodeURIComponent(b.pathname.split("/").pop()), t: new Date(b.uploadedAt).getTime() })),
     });
   } catch (e) {
-    return res.status(500).json({ error: "server" });
+    console.error(e);
+    const m = String(e?.message || e);
+    return res.status(500).json({ error: "server", detail: /token/i.test(m) ? "no_blob_token" : m.slice(0, 200) });
   }
 }
