@@ -86,9 +86,7 @@ const ROSTER = [
 // ==================
 
 const app = document.getElementById("app");
-const today = () => new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
 const norm = n => n.trim().replace(/\s+/g," ").replace(/[׳’`]/g,"'");
-const nice = d => new Date(d+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long"});
 const call = async (qs,body) => {
   const r = await fetch("/api/attendance"+qs, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
   if(!r.ok){
@@ -104,11 +102,11 @@ function render(){ location.hash==="#admin" ? admin() : member(); }
 window.addEventListener("hashchange",render);
 
 async function member(){
-  const d=today(), saved=ls.get("name");
-  const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">${nice(d)}</div></header>`;
+  const saved=ls.get("name");
+  const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">דיווח נוכחות</div></header>`;
   if(saved){
     app.innerHTML=head+`<div class="card done"><div class="big">⏳</div></div>`;
-    let present=false; try{ present=(await call(`?date=${d}&name=${encodeURIComponent(saved)}`)).present; }catch(e){}
+    let present=false; try{ present=(await call(`?name=${encodeURIComponent(saved)}`)).present; }catch(e){}
     if(present) return app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(saved)}, רשמנו אותך!</h2><p>נתראה באימון. אין צורך לעשות שום דבר נוסף.</p><button class="sec" id="other">זה לא אני</button></div>`,
       document.getElementById("other").onclick=()=>{ls.set("name","");member()}, confetti();
     return form(head,saved);
@@ -165,28 +163,32 @@ async function admin(){
     const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
     sessionStorage.setItem("pin",p); sessionStorage.setItem("ok","1");
   }
-  const d = admin.d || today(); admin.d=d;
+  const pin=sessionStorage.getItem("pin");
   app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">טוען…</div></header>`;
-  let data={}; try{ data=await call(`?date=${d}&pin=${encodeURIComponent(sessionStorage.getItem("pin"))}`); }catch(e){ sessionStorage.clear(); app.innerHTML=`<div class="card">${esc(e.message)} <button class="sec" onclick="location.reload()">נסה שוב</button></div>`; return; }
+  let data={}; try{ data=await call(`?pin=${encodeURIComponent(pin)}`); }catch(e){ sessionStorage.clear(); app.innerHTML=`<div class="card">${esc(e.message)} <button class="sec" onclick="location.reload()">נסה שוב</button></div>`; return; }
   const here=data.list.sort((a,b)=>a.t-b.t);
   const hereKeys=new Set(here.map(h=>norm(h.name)));
   const missing=ROSTER.filter(r=>!hereKeys.has(norm(r)));
   const extra=here.filter(h=>!ROSTER.some(r=>norm(r)===norm(h.name)));
   const time=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
-  app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול · ${nice(d)}</div></header>
-  <div class="row"><input type="date" id="dt" value="${d}" style="flex:1"><button class="sec" id="cp">העתק</button><button class="sec" id="rf">רענן</button></div>
-  <div class="bar"><i style="width:${ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0}%"></i></div><div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
-  <div class="card"><h3>✅ נוכחים</h3><ul>${here.map(h=>`<li>${esc(h.name)}<small>${time(h.t)}</small></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
-  ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
-  ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}</di<button class="sec danger" id="rs">🗑️ אפס את הרשימה ליום הזה</button></div>`;
-  document.getElementById("dt").onchange=e=>{admin.d=e.target.value;admin()};
+  const pct=ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0;
+  app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול</div></header>
+  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button></div>
+  <div class="bar"><i style="width:${pct}%"></i></div>
+  <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
+  <div class="card">
+    <h3>✅ נוכחים</h3><ul>${here.map(h=>`<li>${esc(h.name)}<small>${time(h.t)}</small></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
+    ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
+    ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
+    <button class="sec danger" id="rs">🗑️ אפס את הרשימה</button>
+  </div>`;
   document.getElementById("rf").onclick=admin;
   document.getElementById("rs").onclick=async()=>{
-    if(!confirm("למחוק את כל הדיווחים של "+nice(d)+"? אי אפשר לשחזר.")) return;
-    try{ await call("",{action:"reset",pin:sessionStorage.getItem("pin"),date:d}); admin(); }catch(e){ alert(e.message); }
+    if(!confirm("למחוק את כל הדיווחים ולהתחיל מחדש? אי אפשר לשחזר.")) return;
+    try{ await call("",{action:"reset",pin}); admin(); }catch(e){ alert(e.message); }
   };
   document.getElementById("cp").onclick=()=>{
-    const t=`נוכחות ${nice(d)}\n\nנוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
+    const t=`נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
   };
 }
