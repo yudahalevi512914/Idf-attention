@@ -1,4 +1,4 @@
-import { put, list } from "@vercel/blob";
+import { put, list, del } from "@vercel/blob";
 
 const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
@@ -9,6 +9,17 @@ const path = (d, n) => `attendance/${d}/${Buffer.from(n).toString("base64url")}`
 
 export default async function handler(req, res) {
   try {
+    if (req.method === "POST" && req.body?.action === "reset") {
+      if (req.body.pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+      if (!okDate(req.body.date)) return res.status(400).json({ error: "bad date" });
+      let cursor, n = 0;
+      do {
+        const r = await list({ prefix: `attendance/${req.body.date}/`, limit: 1000, cursor, token });
+        if (r.blobs.length) { await del(r.blobs.map(b => b.url), { token }); n += r.blobs.length; }
+        cursor = r.hasMore ? r.cursor : undefined;
+      } while (cursor);
+      return res.json({ ok: true, deleted: n });
+    }
     if (req.method === "POST") {
       const name = norm(req.body?.name);
       if (name.length < 2 || name.length > 60) return res.status(400).json({ error: "bad name" });
