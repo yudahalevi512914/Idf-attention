@@ -5,7 +5,7 @@ const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
 const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
-const path = (d, n) => `attendance/${d}/${encodeURIComponent(n)}`;
+const path = (d, n) => `attendance/${d}/${Buffer.from(n).toString("base64url")}`;
 
 export default async function handler(req, res) {
   try {
@@ -30,11 +30,11 @@ export default async function handler(req, res) {
     if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
     const { blobs } = await list({ prefix: `attendance/${date}/`, limit: 1000, token });
     return res.json({
-      list: blobs.map(b => ({ name: decodeURIComponent(b.pathname.split("/").pop()), t: new Date(b.uploadedAt).getTime() })),
+      list: blobs.map(b => ({ name: Buffer.from(b.pathname.split("/").pop(), "base64url").toString(), t: new Date(b.uploadedAt).getTime() })),
     });
   } catch (e) {
     console.error(e);
     const m = String(e?.message || e);
-    return res.status(500).json({ error: "server", detail: !token || /token/i.test(m) ? "no_blob_token" : m.slice(0, 200) });
+    return res.status(500).json({ error: "server", detail: !token ? "no_blob_token" : m.slice(0, 200) });
   }
 }
