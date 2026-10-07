@@ -40,6 +40,7 @@ async function purge() {
 }
 
 
+
 const FONT = "https://raw.githubusercontent.com/google/fonts/main/ofl/alef/Alef-Regular.ttf";
 const BOLD = "https://raw.githubusercontent.com/google/fonts/main/ofl/alef/Alef-Bold.ttf";
 let fonts;
@@ -49,40 +50,106 @@ async function getFonts() {
   fonts = await Promise.all([get(FONT), get(BOLD)]);
   return fonts;
 }
+
 async function buildPdf({ dateLabel, reports, timeOf }) {
   const [reg, bold] = await getFonts();
-  const doc = new PDFDocument({ size: "A4", margin: 50, font: reg });
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 30, font: reg, autoFirstPage: true });
   doc.registerFont("B", bold);
   const chunks = []; doc.on("data", c => chunks.push(c));
   const done = new Promise(r => doc.on("end", () => r(Buffer.concat(chunks))));
-  const W = doc.page.width - 100;
-  // word-by-word RTL layout (keeps spaces intact; each word is shaped by fontkit)
-  const right = (t, size, f = "B") => {
-    doc.font(f === "B" ? "B" : reg).fontSize(size);
-    const words = String(t).replace(/\u200F/g, "").split(/\s+/).filter(Boolean);
-    const gap = size * 0.32, y = doc.y;
-    let x = 50 + W;
-    for (const w of words) { x -= doc.widthOfString(w); doc.text(w, x, y, { lineBreak: false }); x -= gap; }
-    doc.x = 50; doc.y = y + size * 1.4;
+  const PW = doc.page.width, PH = doc.page.height, M = 30, R = PW - M, W = PW - 2 * M;
+  const NAVY = "#16263a", RED = "#d9541e", GREEN = "#1e8a5a", ZEBRA = "#f5f1e8", LINE = "#d9d2c0";
+
+  // --- text helpers (RTL, word by word) ---
+  const wid = (s, size, f) => doc.font(f).fontSize(size).widthOfString(s);
+  const rtl = (t, xr, y, size, f = reg, maxW = 1e9) => {
+    let words = String(t).split(/\s+/).filter(Boolean);
+    const gap = size * 0.32, total = ws => ws.reduce((s, w) => s + wid(w, size, f), 0) + gap * (ws.length - 1);
+    if (total(words) > maxW) { let s = words.join(" "); while (s.length > 1 && total((s + ".").split(/\s+/)) > maxW) s = s.slice(0, -1); words = (s + ".").split(/\s+/); }
+    doc.font(f).fontSize(size);
+    let x = xr; for (const w of words) { x -= wid(w, size, f); doc.text(w, x, y, { lineBreak: false }); x -= gap; }
   };
-  const need = h => { if (doc.y + h > doc.page.height - 60) doc.addPage(); };
+  const center = (t, xl, w, y, size, f = reg) => { doc.font(f).fontSize(size).text(String(t), xl, y, { width: w, align: "center", lineBreak: false }); };
 
-  right("יודה נוכחות – סיכום חוסרים", 22);
-  doc.fillColor("#666"); right(`${dateLabel}\u200F  |  פעילויות:\u200F ${reports.length}`, 12, "R"); doc.fillColor("#000");
-  doc.moveDown(0.6);
+  // --- data: all names x all activities ---
+  const nk = n => String(n).replace(/[׳’`]/g, "'");
+  const extras = new Set(reports.flatMap(r => r.extra.map(nk)));
+  const disp = new Map();
+  reports.forEach(r => r.present.forEach(n => { const k = nk(n); if (!extras.has(k)) disp.set(k, n); }));
+  reports.forEach(r => r.missing.forEach(n => disp.set(nk(n), n)));
+  const miss = reports.map(r => new Set(r.missing.map(nk)));
+  const rows = [...disp].map(([k, n]) => { const abs = miss.map(s => s.has(k)); return { n, abs, total: abs.filter(Boolean).length }; })
+    .sort((a, b) => b.total - a.total || a.n.localeCompare(b.n, "he"));
+  const N = reports.length, colTot = reports.map((_, j) => rows.filter(r => r.abs[j]).length);
+  const grand = rows.reduce((s, r) => s + r.total, 0);
 
-  if (!reports.length) right("לא נשמרו פעילויות ביום הזה.", 14, "R");
-  reports.forEach(r => {
-    need(70 + Math.min(r.missing.length, 3) * 18);
-    doc.moveTo(50, doc.y).lineTo(50 + W, doc.y).strokeColor("#1e8a5a").lineWidth(1.5).stroke();
-    doc.moveDown(0.5);
-    doc.fillColor("#000"); right(`${r.activity}\u200F  –  ${timeOf(r.t)}`, 16);
-    doc.fillColor("#555"); right(`הגיעו:\u200F ${r.present.length}  |  חסרים:\u200F ${r.missing.length}`, 12, "R"); doc.fillColor("#000");
-    doc.moveDown(0.3);
-    if (!r.missing.length) right("כולם הגיעו", 13, "R");
-    r.missing.forEach(n => { need(20); right("•  " + n, 13, "R"); });
-    doc.moveDown(0.8);
+  // --- layout ---
+  const nameW = 130, totW = 44, avail = W - nameW - totW;
+  const cellW = Math.max(22, Math.min(40, Math.floor(avail / Math.max(N, 1))));
+  const perPage = Math.floor(avail / cellW);
+  const colChunks = []; for (let i = 0; i < N; i += perPage) colChunks.push([i, Math.min(N, i + perPage)]);
+  const rowH = 15, hdrH = 36, titleH = 34, footH = 16;
+  const rowsPer = Math.floor((PH - 2 * M - titleH - hdrH - footH) / rowH);
+  const rowChunks = []; for (let i = 0; i < Math.max(rows.length, 1); i += rowsPer) rowChunks.push([i, Math.min(rows.length, i + rowsPer)]);
+  const totalPages = 1 + colChunks.length * rowChunks.length;
+
+  // --- page 1: summary + legend ---
+  doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 24, "B");
+  doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות: ${N}  |  חיילים: ${rows.length}  |  סה״כ חיסורים: ${grand}`, R, M + 34, 12);
+  doc.fillColor(NAVY); rtl("מקרא פעילויות", R, M + 64, 15, "B");
+  doc.moveTo(M, M + 84).lineTo(R, M + 84).strokeColor(GREEN).lineWidth(1.5).stroke();
+  const lc = N > 36 ? 3 : N > 16 ? 2 : 1, per = Math.ceil(N / lc), lw = W / lc, ly = M + 94, lh = 15.5;
+  reports.forEach((r, i) => {
+    const c = Math.floor(i / per), y = ly + (i % per) * lh, xr = R - c * lw;
+    doc.fillColor(RED); rtl(`${i + 1}.`, xr, y, 11, "B");
+    doc.fillColor("#222"); rtl(r.activity, xr - 26, y, 11, reg, lw - 90);
+    doc.fillColor("#777"); rtl(timeOf(r.t), xr - lw + 60, y, 10);
   });
+  doc.fillColor("#777"); rtl(`עמוד 1 מתוך ${totalPages}`, R, PH - M - 12, 9);
+
+  // --- table pages ---
+  let page = 1;
+  colChunks.forEach(([c0, c1]) => rowChunks.forEach(([r0, r1], ri) => {
+    doc.addPage(); page++;
+    doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 14, "B");
+    doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות ${c0 + 1} עד ${c1}  |  ממוין לפי מספר חיסורים`, R, M + 18, 9.5);
+    rtl(`עמוד ${page} מתוך ${totalPages}`, M + 90, M + 3, 9);
+    let y = M + titleH;
+    // header
+    const tx = R - nameW - totW;
+    doc.rect(tx - (c1 - c0) * cellW, y, nameW + totW + (c1 - c0) * cellW, hdrH).fill(NAVY);
+    doc.fillColor("#fff"); rtl("שם", R - 8, y + 11, 11, "B"); center("סה״כ", R - nameW - totW, totW, y + 11, 10, "B");
+    for (let j = c0; j < c1; j++) {
+      const xl = tx - (j - c0 + 1) * cellW;
+      doc.fillColor("#fff"); center(j + 1, xl, cellW, y + 5, 11, "B");
+      doc.fillColor("#c9d3de"); center(timeOf(reports[j].t), xl, cellW, y + 21, 6.5);
+    }
+    y += hdrH;
+    // body
+    for (let i = r0; i < r1; i++, y += rowH) {
+      const row = rows[i];
+      if ((i - r0) % 2) doc.rect(tx - (c1 - c0) * cellW, y, (c1 - c0) * cellW + totW + nameW, rowH).fill(ZEBRA);
+      doc.fillColor("#111"); rtl(row.n, R - 8, y + 3, 10.5, reg, nameW - 14);
+      doc.fillColor(row.total ? RED : "#999"); center(row.total || "–", R - nameW - totW, totW, y + 3, 10.5, row.total ? "B" : reg);
+      for (let j = c0; j < c1; j++) if (row.abs[j]) {
+        const xl = tx - (j - c0 + 1) * cellW;
+        doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(RED);
+        doc.moveTo(xl + cellW / 2 - 3, y + 4.5).lineTo(xl + cellW / 2 + 3, y + rowH - 4.5).moveTo(xl + cellW / 2 + 3, y + 4.5).lineTo(xl + cellW / 2 - 3, y + rowH - 4.5).strokeColor("#fff").lineWidth(1.1).stroke();
+      }
+    }
+    // grid
+    const top = M + titleH + hdrH, left = tx - (c1 - c0) * cellW;
+    doc.strokeColor(LINE).lineWidth(0.4);
+    for (let j = 0; j <= c1 - c0; j++) doc.moveTo(tx - j * cellW, top).lineTo(tx - j * cellW, y).stroke();
+    doc.moveTo(R - nameW, top).lineTo(R - nameW, y).stroke(); doc.moveTo(R, top).lineTo(R, y).stroke();
+    for (let k = 0; k <= r1 - r0; k++) doc.moveTo(left, top + k * rowH).lineTo(R, top + k * rowH).stroke();
+    // totals row on the last row page
+    if (ri === rowChunks.length - 1) {
+      doc.rect(left, y + 2, R - left, footH).fill(NAVY);
+      doc.fillColor("#fff"); rtl("חסרים בפעילות", R - 8, y + 5, 10, "B"); center(grand, R - nameW - totW, totW, y + 5, 10, "B");
+      for (let j = c0; j < c1; j++) center(colTot[j], tx - (j - c0 + 1) * cellW, cellW, y + 5, 9.5, "B");
+    }
+  }));
   doc.end();
   return done;
 }
