@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>לוח מפקד</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f1e7;--card:#fffefa;--ink:#16263a;--mut:#6f7b88;--ok:#1e8a5a;--okbg:#e3f4ea;--bad:#d9541e;--badbg:#fdeadf;--sun:#f5b82e;--sunbg:#fff3d1;--line:#e8dfcc}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a28;--card:#172538;--ink:#f3efe4;--mut:#9aa8b8;--ok:#4cd694;--okbg:#14382b;--bad:#ff8a52;--badbg:#3a2418;--sunbg:#3a3114;--line:#27384e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,Arial,sans-serif;padding:18px 14px 96px;display:flex;justify-content:center}
+main{width:100%;max-width:520px}
+h1{font-size:28px;font-weight:800;margin:4px 0}h1 span{color:var(--ok)}
+h2{margin:6px 0 12px}h3{margin:0 0 8px;font-size:16px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+#st{color:var(--mut);font-size:13px}
+.card{background:var(--card);border:2px solid var(--line);border-radius:18px;padding:14px;margin-bottom:12px}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:11px 12px;border-radius:12px;border:2px solid var(--line);background:var(--bg);color:var(--ink);margin:4px 0}
+textarea{min-height:70px;resize:vertical}
+label{font-size:13px;color:var(--mut)}
+button{font:inherit;font-weight:600;cursor:pointer;border:0;border-radius:12px;padding:11px 14px;background:var(--ok);color:#fff;font-size:16px}
+button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);padding:7px 11px;font-size:14px}
+button.x{background:transparent;color:var(--bad);padding:4px 8px;font-size:15px}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.row>.n{flex:0}
+.item{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed var(--line)}
+.item:last-child{border:0}.item .t{flex:1}
+.item small,.mut{color:var(--mut)}
+.done .t{text-decoration:line-through;opacity:.5}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:var(--line);margin-inline-end:4px}
+.pill.bad{background:var(--badbg);color:var(--bad)}.pill.ok{background:var(--okbg);color:var(--ok)}.pill.sun{background:var(--sunbg)}
+.sol{display:flex;justify-content:space-between;align-items:center;padding:13px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:17px}
+.sol:last-child{border:0}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:2px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0)}
+nav button{flex:1;background:transparent;color:var(--mut);border-radius:0;padding:12px 4px;font-size:13px;display:flex;flex-direction:column;gap:2px;align-items:center}
+nav button b{font-size:21px;font-weight:400}nav button.on{color:var(--ok)}
+.chk{width:24px;height:24px;flex:0 0 24px;margin-top:2px;accent-color:var(--ok)}
+#toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;opacity:0;transition:.25s;pointer-events:none}
+#toast.on{opacity:1}
+.empty{color:var(--mut);padding:8px 0}
+.item.tap .t{cursor:pointer}
+.task{border-inline-start:6px solid var(--line);padding-inline-start:8px;position:relative;background:var(--card)}
+.task.p0{border-color:var(--bad)}.task.p1{border-color:var(--sun)}
+.drag{touch-action:none;cursor:grab;font-size:22px;color:var(--mut);padding:0 4px;user-select:none;-webkit-user-select:none}
+.task.dragging{opacity:.85;box-shadow:0 8px 20px rgba(0,0,0,.25);z-index:5;background:var(--card);border-radius:12px}
+.task.ins{box-shadow:0 -4px 0 var(--ok)}.task.insend{box-shadow:0 4px 0 var(--ok)}
+.sheetbg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);width:100%;max-width:520px;border-radius:22px 22px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:90vh;overflow:auto}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.pbtn.on{background:var(--ok);color:#fff;border-color:var(--ok)}
+.hint{font-size:12px;color:var(--mut)}
+</style>
+</head>
+<body><main><div class="top"><h1>לוח <span>מפקד</span></h1><span id="st"></span></div><div id="app"></div></main>
+<nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
+<script>
+const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
+const TYPES=["בקשה","פנייה","טענה","רפואי","הערה"], LST=["חדש","הועלה","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
+let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null;
+const PRI=["🔴 דחוף","🟡 רגיל","⚪ נמוך"];
+const $=id=>document.getElementById(id), app=$("app");
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const uid=()=>Math.random().toString(36).slice(2,9);
+const todayStr=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
+const daysTo=d=>Math.round((new Date(d+"T12:00:00")-new Date(todayStr()+"T12:00:00"))/864e5);
+const fmt=d=>new Date(d+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
+const when=d=>{const n=daysTo(d);return n<0?`<span class="pill bad">באיחור ${-n} י׳</span>`:n===0?`<span class="pill bad">היום</span>`:n===1?`<span class="pill sun">מחר</span>`:`<span class="pill">${fmt(d)}</span>`};
+const sd=n=>S.soldiers[n]||(S.soldiers[n]={notes:"",med:{status:"",expires:"",next:""},log:[]});
+const toast=m=>{$("toast").textContent=m;$("toast").classList.add("on");setTimeout(()=>$("toast").classList.remove("on"),1800)};
+const copy=t=>navigator.clipboard.writeText(t).then(()=>toast("הועתק ✓"),()=>toast("ההעתקה נכשלה"));
+const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}}, lsSet=(k,v)=>{try{v===null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}};
+
+const api=async data=>{
+  const r=await fetch(data===undefined?`/api/manager?pin=${encodeURIComponent(pin)}`:"/api/manager",data===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,data})});
+  if(r.status===401) throw new Error("401"); if(!r.ok) throw new Error("server"); return r.json();
+};
+const save=()=>{ $("st").textContent="שומר…"; clearTimeout(timer); timer=setTimeout(async()=>{ try{await api(S);$("st").textContent="נשמר ✓"}catch(e){$("st").textContent="⚠️ לא נשמר"} },500); };
+const go=()=>{save();render()};
+
+async function boot(){
+  pin=lsGet("mpin")||"";
+  for(;;){
+    if(!pin){ pin=prompt("קוד כניסה:")||""; if(!pin){ app.innerHTML='<div class="card">נדרש קוד. רענן את הדף.</div>'; return; } }
+    try{ const r=await api(); S=Object.assign({squad:[],soldiers:{},orders:[],tasks:[]},r.data||{}); S.tasks.forEach(t=>{ if(t.pri===undefined) t.pri=t.hot?0:1; }); lsSet("mpin",pin); break; }
+    catch(e){ if(e.message==="401"){ pin=""; lsSet("mpin",null); continue; } app.innerHTML='<div class="card">שגיאת שרת. נסה לרענן.</div>'; return; }
+  }
+  render();
+}
+
+function render(){
+  $("nav").innerHTML=[["today","📌","היום"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
+  if(!S.squad.length||editSquad) return app.innerHTML=squadPicker();
+  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tasks();
+}
+const stCls=s=>s==="חדש"||s==="חדשה"?"sun":["הועלה","נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
+function renderSheet(){
+  const box=$("sheet");
+  if(!SH){ box.innerHTML=""; return; }
+  let b="";
+  const chips=l=>`<div class="chips">${l.map(s=>`<button class="sec" data-a="chip" data-v="${s}">${s}</button>`).join("")}</div>`;
+  if(SH.kind==="task"){
+    const t=S.tasks.find(x=>x.id===SH.id);
+    b=`<h3>עריכת משימה</h3><textarea id="e_text">${esc(t.text)}</textarea>
+    <label>תאריך יעד</label><input id="e_due" type="date" value="${esc(t.due||"")}">
+    <label>🔔 תזכורת בטלפון (תאריך ושעה)</label><input id="e_rem" type="datetime-local" value="${esc(t.rem||"")}">
+    <label>עדיפות</label><div class="row">${PRI.map((p,i)=>`<button class="sec pbtn ${t.pri===i?"on":""}" data-a="setpri" data-i="${i}">${p}</button>`).join("")}</div>
+    <div class="row" style="margin-top:12px"><button data-a="shsave">שמור</button><button class="sec" data-a="toics">📲 הוסף לטלפון</button></div>
+    <div class="row" style="margin-top:8px"><button class="sec" data-a="totop">⬆ לראש הרשימה</button><button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button></div>`;
+  } else if(SH.kind==="order"){
+    const o=S.orders.find(x=>x.id===SH.id);
+    b=`<h3>עריכת הוראה</h3><textarea id="e_text">${esc(o.text)}</textarea>
+    <div class="row"><div><label>ממי</label><input id="e_from" value="${esc(o.from||"")}"></div><div><label>עד מתי</label><input id="e_due" type="date" value="${esc(o.due||"")}"></div></div>
+    <label>סטטוס (אפשר לכתוב כל דבר)</label><input id="e_st" value="${esc(o.st)}">${chips(OST)}
+    <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button><button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button></div>`;
+  } else {
+    const l=sd(SH.n).log.find(x=>x.id===SH.id);
+    b=`<h3>${esc(SH.n)} · עריכת רישום</h3><select id="e_type">${TYPES.map(t=>`<option ${t===l.type?"selected":""}>${t}</option>`).join("")}</select>
+    <textarea id="e_text">${esc(l.text)}</textarea>
+    <label>סטטוס (אפשר לכתוב כל דבר)</label><input id="e_st" value="${esc(l.st)}">${chips(LST)}
+    <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button><button class="sec" data-a="shcopy">העתק</button><button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button></div>`;
+  }
+  box.innerHTML=`<div class="sheetbg" data-a="shclose"><div class="sheet" data-stop="1">${b}<button class="sec" data-a="shclose" style="width:100%;margin-top:10px">סגור</button></div></div>`;
+}
+const openSheet=s=>{SH=s;renderSheet()};
+const closeSheet=()=>{SH=null;renderSheet()};
+function squadPicker(){
+  return `<div class="card"><h2>מי הכיתה שלך?</h2><p class="mut">סמן את החיילים שבאחריותך.</p>${ROSTER.map(n=>`<label class="item" style="font-size:17px;color:var(--ink)"><input class="chk" type="checkbox" data-sq="${esc(n)}" ${S.squad.includes(n)?"checked":""}><span class="t">${esc(n)}</span></label>`).join("")}<button data-a="sqsave" style="width:100%;margin-top:10px">שמור</button></div>`;
+}
+function openLog(){ const o=[]; S.squad.forEach(n=>sd(n).log.forEach(l=>{ if(l.st==="חדש") o.push({n,...l}); })); return o; }
+function today(){
+  const t=todayStr(), L=[];
+  const tk=S.tasks.filter(x=>!x.done&&x.due&&daysTo(x.due)<=0), od=S.orders.filter(x=>x.st!=="בוצעה"&&x.due&&daysTo(x.due)<=2);
+  const med=[]; S.squad.forEach(n=>{const m=sd(n).med; if(m.expires&&daysTo(m.expires)<=7) med.push([n,"תוקף רפואי",m.expires,m.status]); if(m.next&&daysTo(m.next)>=0&&daysTo(m.next)<=3) med.push([n,"תור/מעקב",m.next,""]);});
+  const ol=openLog(), newOrd=S.orders.filter(x=>x.st==="חדשה");
+  const sec=(title,body)=>body?`<div class="card"><h3>${title}</h3>${body}</div>`:"";
+  const row=(txt,d)=>`<div class="item"><div class="t">${txt}</div>${d?when(d):""}</div>`;
+  const body=
+    sec("⏰ משימות להיום ובאיחור",tk.map(x=>row(esc(x.text),x.due)).join(""))+
+    sec("📢 הוראות שקרובות להגיע",od.map(x=>row(esc(x.text),x.due)).join(""))+
+    sec("🩺 רפואי: תוקף ותורים",med.map(([n,k,d,s])=>row(`<b>${esc(n)}</b> · ${k}${s?`<br><small>${esc(s)}</small>`:""}`,d)).join(""))+
+    sec(`📨 פניות שעוד לא הועלו (${ol.length})`,ol.map(l=>row(`<b>${esc(l.n)}</b> · ${esc(l.type)}<br><small>${esc(l.text)}</small>`)).join("")+`<button data-a="cpopen" class="sec" style="margin-top:8px">העתק להעלאה לדרג</button>`.replace(/^.*$/,ol.length?`<button data-a="cpopen" class="sec" style="margin-top:8px">העתק להעלאה לדרג וסמן כהועלו</button>`:""))+
+    sec(`📥 הוראות חדשות להעביר למטה (${newOrd.length})`,newOrd.map(x=>row(esc(x.text),x.due)).join(""));
+  return `<h2>היום שלי</h2>`+(body||`<div class="card empty">אין כרגע שום דבר דחוף 🎉</div>`)+`<button data-a="cprem" class="sec" style="width:100%">📲 הכן תזכורות לטלפון</button>`;
+}
+function soldiers(){
+  return `<div class="row" style="margin-bottom:8px"><h2 style="flex:1;margin:0">הכיתה שלי</h2><button class="sec n" data-a="editsq">ערוך הרכב</button></div><div class="card">`+S.squad.map(n=>{
+    const s=sd(n), open=s.log.filter(l=>l.st==="חדש").length, m=s.med, w=m.expires&&daysTo(m.expires)<=7;
+    return `<div class="sol" data-a="open" data-n="${esc(n)}"><span>${esc(n)}</span><span>${w?'<span class="pill bad">רפואי</span>':""}${open?`<span class="pill sun">${open} פתוחות</span>`:""}‹</span></div>`;
+  }).join("")+`</div>`;
+}
+function soldier(n){
+  const s=sd(n), m=s.med;
+  return `<button class="sec" data-a="back">→ חזרה</button><h2 style="margin-top:10px">${esc(n)}</h2>
+  <div class="card"><h3>🩺 סטטוס רפואי (כללי בלבד, בלי אבחנות)</h3>
+    <input data-f="status" data-n="${esc(n)}" value="${esc(m.status)}" placeholder="למשל: פטור מריצה">
+    <div class="row"><div><label>תוקף עד</label><input type="date" data-f="expires" data-n="${esc(n)}" value="${esc(m.expires)}"></div><div><label>תור/מעקב הבא</label><input type="date" data-f="next" data-n="${esc(n)}" value="${esc(m.next)}"></div></div></div>
+  <div class="card"><h3>📝 הערות עליו</h3><textarea data-f="notes" data-n="${esc(n)}" placeholder="כל מה שחשוב לזכור">${esc(s.notes)}</textarea></div>
+  <div class="card"><h3>➕ פנייה חדשה</h3><select id="lt">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select><textarea id="lx" placeholder="מה הוא ביקש / טען / מה קרה"></textarea><button data-a="addlog" data-n="${esc(n)}" style="width:100%">הוסף ליומן</button></div>
+  <div class="card"><h3>יומן <span class="hint">(לחץ על רישום כדי לערוך)</span></h3>${s.log.length?[...s.log].reverse().map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(n)}" data-id="${l.id}"><div class="t"><span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span> <small>${fmt(new Date(l.t).toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}))}</small><br>${esc(l.text)}</div></div>`).join(""):'<div class="empty">אין עדיין רישומים</div>'}</div>`;
+}
+function orders(){
+  const L=[...S.orders].sort((a,b)=>(a.st==="בוצעה")-(b.st==="בוצעה")||(a.due||"9").localeCompare(b.due||"9"));
+  return `<h2>הוראות וציפיות מלמעלה</h2><div class="card"><textarea id="ox" placeholder="מה ההוראה / הציפייה"></textarea><div class="row"><input id="of" placeholder="ממי (לא חובה)"><input id="od" type="date"></div><button data-a="addord" style="width:100%;margin-top:6px">הוסף</button></div>
+  <div class="card"><span class="hint">לחץ על הוראה כדי לערוך אותה או לשנות סטטוס</span>${L.length?L.map(o=>`<div class="item tap ${o.st==="בוצעה"?"done":""}" data-a="editord" data-id="${o.id}"><div class="t">${esc(o.text)}<br><small>${o.from?esc(o.from)+" · ":""}</small><span class="pill ${stCls(o.st)}">${esc(o.st)}</span></div>${o.due?when(o.due):""}</div>`).join(""):'<div class="empty">אין הוראות</div>'}</div>`;
+}
+function taskRow(x){
+  return `<div class="item task p${x.pri} ${x.done?"done":""}" data-id="${x.id}"><span class="drag" data-drag="1">⠿</span><input class="chk" type="checkbox" data-a="tdone" data-id="${x.id}" ${x.done?"checked":""}><div class="t" data-a="edittask" data-id="${x.id}" style="cursor:pointer">${esc(x.text)}${x.rem?`<br><small>🔔 ${new Date(x.rem).toLocaleString("he-IL",{day:"numeric",month:"numeric",hour:"2-digit",minute:"2-digit"})}${x.remSent?" · נשלח לטלפון":""}</small>`:""}</div>${x.due?when(x.due):""}</div>`;
+}
+function tasks(){
+  const act=S.tasks.filter(t=>!t.done), done=S.tasks.filter(t=>t.done);
+  return `<h2>המשימות שלי</h2><div class="card"><input id="tx" placeholder="משימה חדשה"><div class="row"><div><label>תאריך יעד</label><input id="td" type="date"></div><div><label>🔔 תזכורת בטלפון</label><input id="tr" type="datetime-local"></div></div>
+  <div class="row" style="margin-top:6px"><select id="tp">${PRI.map((p,i)=>`<option value="${i}" ${i===1?"selected":""}>${p}</option>`).join("")}</select><button data-a="addtask">הוסף</button></div></div>
+  <div class="card"><span class="hint">גרור ⠿ כדי לשנות סדר · לחץ על משימה כדי לערוך</span><div id="tl">${act.length?act.map(taskRow).join(""):'<div class="empty">אין משימות פתוחות 🎉</div>'}</div></div>
+  ${done.length?`<details class="card"><summary>הושלמו (${done.length})</summary>${done.map(taskRow).join("")}</details>`:""}`;
+}
+
+const val=id=>$(id)?.value??"";
+const icsUrl=t=>`/api/ics?t=${encodeURIComponent(t.text)}&at=${encodeURIComponent(t.rem)}`;
+const A={
+  tab:d=>{tab=d.k;sel=null;editSquad=false;render()},
+  open:d=>{sel=d.n;render();scrollTo(0,0)}, back:()=>{sel=null;render()},
+  editsq:()=>{editSquad=true;render()},
+  sqsave:()=>{S.squad=[...document.querySelectorAll("[data-sq]")].filter(c=>c.checked).map(c=>c.dataset.sq);editSquad=false;go()},
+  addlog:d=>{const x=$("lx").value.trim(); if(!x) return toast("כתוב מה קרה"); sd(d.n).log.push({id:uid(),t:Date.now(),type:$("lt").value,text:x,st:"חדש"}); go()},
+  editlog:d=>openSheet({kind:"log",n:d.n,id:d.id}),
+  editord:d=>openSheet({kind:"order",id:d.id}),
+  edittask:d=>openSheet({kind:"task",id:d.id,pri:S.tasks.find(t=>t.id===d.id).pri}),
+  chip:d=>{$("e_st").value=d.v},
+  setpri:d=>{SH.pri=+d.i; document.querySelectorAll(".pbtn").forEach((b,i)=>b.classList.toggle("on",i===+d.i))},
+  shclose:()=>closeSheet(),
+  shsave:()=>{shSave();closeSheet();go()},
+  shcopy:()=>{const l=sd(SH.n).log.find(x=>x.id===SH.id); copy(`${SH.n} · ${l.type}: ${l.text}`)},
+  shdel:()=>{ if(!confirm("למחוק?")) return;
+    if(SH.kind==="task") S.tasks=S.tasks.filter(x=>x.id!==SH.id);
+    else if(SH.kind==="order") S.orders=S.orders.filter(x=>x.id!==SH.id);
+    else { const s=sd(SH.n); s.log=s.log.filter(x=>x.id!==SH.id); }
+    closeSheet(); go(); },
+  totop:()=>{shSave(); const t=S.tasks.find(x=>x.id===SH.id); S.tasks=[t,...S.tasks.filter(x=>x!==t)]; closeSheet(); go()},
+  toics:()=>{ shSave(); const t=S.tasks.find(x=>x.id===SH.id); if(!t.rem){ return toast("בחר תאריך ושעה לתזכורת"); } t.remSent=true; save(); location.href=icsUrl(t); },
+  cpopen:()=>{const o=openLog(); copy("פניות להעלאה:\n"+o.map(l=>`• ${l.n} (${l.type}): ${l.text}`).join("\n")); o.forEach(l=>{sd(l.n).log.find(x=>x.id===l.id).st="הועלה"}); go()},
+  addord:()=>{const x=$("ox").value.trim(); if(!x) return toast("כתוב את ההוראה"); S.orders.push({id:uid(),text:x,from:$("of").value.trim(),due:$("od").value,st:"חדשה"}); go()},
+  addtask:()=>{const x=$("tx").value.trim(); if(!x) return toast("כתוב משימה"); S.tasks.push({id:uid(),text:x,due:$("td").value,rem:$("tr").value,pri:+$("tp").value,done:false}); go()},
+  tdone:d=>{const t=S.tasks.find(t=>t.id===d.id); t.done=!t.done; go()},
+  cprem:()=>{
+    const L=[];
+    S.tasks.filter(t=>!t.done&&t.rem&&!t.remSent).forEach(t=>{L.push(`${t.text} — תזכורת ב-${t.rem.replace("T"," ")}`); t.remSent=true;});
+    S.tasks.filter(t=>!t.done&&!t.rem&&t.due).forEach(t=>L.push(`${t.text} — עד ${t.due}`));
+    S.orders.filter(o=>o.st!=="בוצעה"&&o.due).forEach(o=>L.push(`הוראה: ${o.text} — עד ${o.due}`));
+    S.squad.forEach(n=>{const m=sd(n).med; if(m.expires) L.push(`לבדוק תוקף רפואי של ${n} — ${m.expires}`); if(m.next) L.push(`תור/מעקב של ${n} — ${m.next}`);});
+    if(!L.length) return toast("אין פריטים עם תאריך");
+    copy("תוסיף לי לתזכורות בטלפון:\n"+L.map(x=>"• "+x).join("\n")); toast("הועתק. הדבק בצ'אט עם Claude"); go();
+  }
+};
+function shSave(){
+  if(SH.kind==="task"){ const t=S.tasks.find(x=>x.id===SH.id); const rem=val("e_rem"); if(rem!==(t.rem||"")) t.remSent=false;
+    Object.assign(t,{text:val("e_text").trim()||t.text,due:val("e_due"),rem,pri:SH.pri}); }
+  else if(SH.kind==="order"){ const o=S.orders.find(x=>x.id===SH.id); Object.assign(o,{text:val("e_text").trim()||o.text,from:val("e_from").trim(),due:val("e_due"),st:val("e_st").trim()||o.st}); }
+  else { const l=sd(SH.n).log.find(x=>x.id===SH.id); Object.assign(l,{type:val("e_type"),text:val("e_text").trim()||l.text,st:val("e_st").trim()||l.st}); }
+}
+// reorder: move task id to index among open tasks
+function moveTask(id,idx){
+  const act=S.tasks.filter(t=>!t.done), done=S.tasks.filter(t=>t.done), t=act.find(x=>x.id===id);
+  const rest=act.filter(x=>x!==t); idx=Math.max(0,Math.min(rest.length,idx)); rest.splice(idx,0,t); S.tasks=[...rest,...done];
+}
+// drag & drop with pointer events (touch + mouse)
+let drag=null;
+document.addEventListener("pointerdown",e=>{
+  const hd=e.target.closest("[data-drag]"); if(!hd) return;
+  const row=hd.closest(".task"), list=$("tl"); if(!list||!list.contains(row)) return;
+  e.preventDefault(); hd.setPointerCapture?.(e.pointerId);
+  drag={row,y0:e.clientY,id:row.dataset.id,list,idx:null}; row.classList.add("dragging");
+});
+document.addEventListener("pointermove",e=>{
+  if(!drag) return; e.preventDefault();
+  drag.row.style.transform=`translateY(${e.clientY-drag.y0}px)`;
+  const others=[...drag.list.querySelectorAll(".task")].filter(r=>r!==drag.row);
+  others.forEach(r=>r.classList.remove("ins","insend"));
+  let idx=0; others.forEach(r=>{const b=r.getBoundingClientRect(); if(e.clientY>b.top+b.height/2) idx++;});
+  drag.idx=idx; if(others[idx]) others[idx].classList.add("ins"); else if(others.length) others[others.length-1].classList.add("insend");
+},{passive:false});
+const endDrag=e=>{
+  if(!drag) return; const {id,idx}=drag; drag.row.style.transform=""; drag.row.classList.remove("dragging");
+  document.querySelectorAll(".ins,.insend").forEach(r=>r.classList.remove("ins","insend")); drag=null;
+  if(idx!==null) { moveTask(id,idx); go(); }
+};
+document.addEventListener("pointerup",endDrag); document.addEventListener("pointercancel",()=>{ if(drag){drag.row.style.transform="";drag.row.classList.remove("dragging");drag=null;} });
+const onClick=e=>{
+  const b=e.target.closest("[data-a]"); if(!b) return;
+  if(b.dataset.a==="shclose"&&e.target.closest("[data-stop]")&&!e.target.closest("button")) return; // tap inside sheet body
+  A[b.dataset.a]?.(b.dataset);
+};
+app.addEventListener("click",onClick); $("sheet").addEventListener("click",onClick);
+$("nav").addEventListener("click",e=>{const b=e.target.closest("[data-a]"); if(b) A[b.dataset.a](b.dataset)});
+app.addEventListener("change",e=>{
+  const f=e.target.dataset.f; if(!f) return; const s=sd(e.target.dataset.n);
+  if(f==="notes") s.notes=e.target.value; else s.med[f]=e.target.value; save();
+});
+boot();
+</script>
+</body></html>
