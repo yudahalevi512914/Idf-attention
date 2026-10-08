@@ -178,6 +178,18 @@ async function makePdf(pin,btn){
   finally{ btn.textContent=old; }
 }
 
+async function finals(pin){
+  app.innerHTML=`<header><div class="logo">📁</div><h1>דוחות <span>שמורים</span></h1><div class="date">טוען…</div></header>`;
+  let list=[]; try{ list=(await jcall(`?pin=${encodeURIComponent(pin)}&finals=1`)).finals; }catch(e){ alert(e.message); return admin(); }
+  app.innerHTML=`<header><div class="logo">📁</div><h1>דוחות <span>שמורים</span></h1><div class="date">הדוח הסופי של כל יום, 7 הימים האחרונים</div></header>
+  <div class="card">${list.length?list.map(f=>`<li style="list-style:none"><span>${esc(f.label)}</span><button class="sec dl" data-d="${f.date}">הורד</button></li>`).join(""):"<p>עדיין אין דוחות שמורים. דוח נשמר אוטומטית אחרי חצות.</p>"}<button class="sec" id="bk" style="margin-top:12px;width:100%">חזרה</button></div>`;
+  document.getElementById("bk").onclick=admin;
+  document.querySelectorAll(".dl").forEach(b=>b.onclick=async()=>{
+    const old=b.textContent; b.textContent="מוריד…";
+    try{ const r=await call(`?pin=${encodeURIComponent(pin)}&final=${b.dataset.d}`); const url=URL.createObjectURL(await r.blob());
+      const a=document.createElement("a"); a.href=url; a.download=`attendance-${b.dataset.d}.pdf`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert(e.message); } finally{ b.textContent=old; } });
+}
 async function admin(){
   if(sessionStorage.getItem("ok")!=="1"){
     const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
@@ -195,7 +207,7 @@ async function admin(){
   app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול</div></header>
   <div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 10px">שם הפעילות</h3>
     <div class="row"><input id="act" value="${esc(data.activity||"")}" placeholder="למשל: אימון בוקר" style="flex:1"><button class="sec" id="sv">שמור</button></div></div>
-  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button></div>
+  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button><button class="sec" id="fin">📁 דוחות שמורים</button></div>
   <div class="bar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
@@ -215,6 +227,7 @@ async function admin(){
     try{ await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
   };
   document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
+  document.getElementById("fin").onclick=()=>finals(pin);
   document.getElementById("cp").onclick=()=>{
     const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});

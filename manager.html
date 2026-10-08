@@ -55,7 +55,7 @@ nav button b{font-size:21px;font-weight:400}nav button.on{color:var(--ok)}
 <nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
-const TYPES=["בקשה","פנייה","טענה","רפואי","הערה"], LST=["חדש","הועלה","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
+const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","הועלה","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null;
 const PRI=["🔴 דחוף","🟡 רגיל","⚪ נמוך"];
 const $=id=>document.getElementById(id), app=$("app");
@@ -88,9 +88,9 @@ async function boot(){
 }
 
 function render(){
-  $("nav").innerHTML=[["today","📌","היום"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
+  $("nav").innerHTML=[["today","📌","היום"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"],["sum","📊","סיכומים"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
   if(!S.squad.length||editSquad) return app.innerHTML=squadPicker();
-  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tasks();
+  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tasks();
 }
 const stCls=s=>s==="חדש"||s==="חדשה"?"sun":["הועלה","נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
 function renderSheet(){
@@ -176,7 +176,80 @@ function tasks(){
 
 const val=id=>$(id)?.value??"";
 const icsUrl=t=>`/api/ics?t=${encodeURIComponent(t.text)}&at=${encodeURIComponent(t.rem)}`;
+
+// ---------- summaries ----------
+const CLOSED=["נסגר","בוצעה","סגור","טופל","הושלם"];
+const isOpen=st=>!CLOSED.includes(String(st??"").trim());
+const PRI_PLAIN=["דחוף","רגיל","נמוך"];
+let SUM={src:"log",type:"",status:"open",soldier:""};
+const PRESETS=[
+  ["🩺 רפואי פתוח",{src:"log",type:"רפואי",status:"open",soldier:""}],
+  ["🚪 כל בקשות היציאה",{src:"log",type:"בקשת יציאה",status:"all",soldier:""}],
+  ["🚪 בקשות יציאה פתוחות",{src:"log",type:"בקשת יציאה",status:"open",soldier:""}],
+  ["📨 כל הפתוח אצל החיילים",{src:"log",type:"",status:"open",soldier:""}],
+  ["📢 הוראות פתוחות",{src:"ord",type:"",status:"open",soldier:""}],
+  ["✅ משימות פתוחות",{src:"task",type:"",status:"open",soldier:""}]];
+const fmtY=d=>d?new Date(d+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric"}):"";
+const dayOfMs=t=>new Date(t).toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
+const STL={open:"פתוחים בלבד",closed:"סגורים בלבד",all:"כל הסטטוסים"};
+const pass=(open,s)=>s==="all"||(s==="open"?open:!open);
+function buildSummary(){
+  const today=new Date().toLocaleDateString("he-IL",{day:"numeric",month:"numeric",year:"numeric",timeZone:"Asia/Jerusalem"});
+  const tables=[], prev=[]; let title;
+  if(SUM.src==="log"){
+    title=SUM.type?`סיכום ${SUM.type}`:"סיכום פניות ובקשות";
+    const rows=[];
+    S.squad.filter(n=>!SUM.soldier||n===SUM.soldier).forEach(n=>sd(n).log.forEach(l=>{
+      if((!SUM.type||l.type===SUM.type)&&pass(isOpen(l.st),SUM.status)) rows.push({n,l});
+    }));
+    rows.sort((a,b)=>a.n.localeCompare(b.n,"he")||a.l.t-b.l.t);
+    tables.push({heading:SUM.type||"פניות ובקשות",cols:[{h:"חייל",w:2.2},{h:"סוג",w:1.8},{h:"תאריך",w:1.3},{h:"סטטוס",w:1.8},{h:"פירוט",w:6}],
+      rows:rows.map(({n,l})=>[n,l.type,fmt(dayOfMs(l.t)),l.st,l.text])});
+    rows.forEach(({n,l})=>prev.push(`<b>${esc(n)}</b> · ${esc(l.type)} · <span class="pill ${stCls(l.st)}">${esc(l.st)}</span><br><small>${fmt(dayOfMs(l.t))}</small> ${esc(l.text)}`));
+    if(SUM.type==="רפואי"){
+      const med=S.squad.filter(n=>(!SUM.soldier||n===SUM.soldier)&&(sd(n).med.status||sd(n).med.expires||sd(n).med.next));
+      tables.push({heading:"סטטוס רפואי כללי",cols:[{h:"חייל",w:2.2},{h:"סטטוס",w:5},{h:"תוקף עד",w:2},{h:"תור/מעקב הבא",w:2}],
+        rows:med.map(n=>{const m=sd(n).med;return [n,m.status||"",fmtY(m.expires),fmtY(m.next)]})});
+      med.forEach(n=>{const m=sd(n).med; prev.push(`<b>${esc(n)}</b> · סטטוס כללי<br>${esc(m.status||"")}${m.expires?` · תוקף ${fmtY(m.expires)}`:""}${m.next?` · תור ${fmtY(m.next)}`:""}`)});
+    }
+  } else if(SUM.src==="ord"){
+    title="סיכום הוראות";
+    const L=S.orders.filter(o=>pass(isOpen(o.st),SUM.status));
+    tables.push({heading:"הוראות וציפיות",cols:[{h:"הוראה",w:6},{h:"ממי",w:2},{h:"עד מתי",w:2},{h:"סטטוס",w:2.2}],rows:L.map(o=>[o.text,o.from||"",fmtY(o.due),o.st])});
+    L.forEach(o=>prev.push(`${esc(o.text)}<br><small>${o.from?esc(o.from)+" · ":""}${o.due?fmtY(o.due)+" · ":""}${esc(o.st)}</small>`));
+  } else {
+    title="סיכום משימות";
+    const L=S.tasks.filter(t=>pass(!t.done,SUM.status));
+    tables.push({heading:"משימות",cols:[{h:"משימה",w:6},{h:"עדיפות",w:1.5},{h:"יעד",w:2},{h:"תזכורת",w:2.6}],
+      rows:L.map(t=>[t.text,PRI_PLAIN[t.pri]||"",fmtY(t.due),t.rem?`${fmtY(t.rem.slice(0,10))} ${t.rem.slice(11)}`:""])});
+    L.forEach(t=>prev.push(`${t.pri===0?"🔴 ":""}${esc(t.text)}<br><small>${t.due?fmtY(t.due):"ללא תאריך"}${t.done?" · הושלמה":""}</small>`));
+  }
+  const count=tables[0].rows.length;
+  const sub=`נוצר ב-${today} · ${count} פריטים · ${STL[SUM.status]}${SUM.soldier?` · ${SUM.soldier}`:""}`;
+  return {doc:{title,sub,tables},prev,count,sub,title};
+}
+function summaries(){
+  const b=buildSummary(), opt=(v,l,cur)=>`<option value="${esc(v)}" ${cur===v?"selected":""}>${esc(l)}</option>`;
+  return `<h2>סיכומים</h2>
+  <div class="card"><h3>קיצורי דרך</h3><div class="chips">${PRESETS.map(([l],i)=>`<button class="sec" data-a="preset" data-i="${i}">${l}</button>`).join("")}</div></div>
+  <div class="card"><h3>או בנה סיכום בעצמך</h3>
+    <label>מה לסכם</label><select data-sum="src">${opt("log","פניות ובקשות של החיילים",SUM.src)}${opt("ord","הוראות מלמעלה",SUM.src)}${opt("task","המשימות שלי",SUM.src)}</select>
+    ${SUM.src==="log"?`<label>סוג</label><select data-sum="type">${opt("","הכל",SUM.type)}${TYPES.map(t=>opt(t,t,SUM.type)).join("")}</select>
+    <label>חייל</label><select data-sum="soldier">${opt("","כל הכיתה",SUM.soldier)}${S.squad.map(n=>opt(n,n,SUM.soldier)).join("")}</select>`:""}
+    <label>סטטוס</label><select data-sum="status">${Object.entries(STL).map(([k,l])=>opt(k,l,SUM.status)).join("")}</select>
+    <span class="hint">"סגור" = סטטוס נסגר או בוצעה. כל סטטוס אחר נחשב פתוח.</span></div>
+  <div class="card"><h3>${esc(b.title)} · ${b.count} פריטים</h3>
+    <div class="row" style="margin-bottom:6px"><button data-a="sumpdf">📄 ייצא ל-PDF</button><button class="sec" data-a="sumcopy">העתק</button></div>
+    ${b.prev.length?b.prev.map(p=>`<div class="item"><div class="t">${p}</div></div>`).join(""):'<div class="empty">אין פריטים שמתאימים לבחירה</div>'}</div>`;
+}
 const A={
+  preset:d=>{SUM={...PRESETS[+d.i][1]};render()},
+  sumcopy:()=>{const b=buildSummary(); copy(`${b.title}\n${b.sub}\n\n`+b.doc.tables.map(t=>t.heading+":\n"+t.rows.map(x=>"• "+x.filter(Boolean).join(" · ")).join("\n")).join("\n\n"))},
+  sumpdf:async d=>{ const btn=document.querySelector('[data-a=sumpdf]'), old=btn.textContent; btn.textContent="מכין…";
+    try{ const b=buildSummary(); const r=await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"pdf",doc:b.doc})});
+      if(!r.ok) throw new Error(r.status===401?"קוד שגוי":"שגיאת שרת"); const url=URL.createObjectURL(await r.blob());
+      const a=document.createElement("a"); a.href=url; a.download="summary.pdf"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ toast("יצירת ה-PDF נכשלה: "+e.message); } finally{ btn.textContent=old; } },
   tab:d=>{tab=d.k;sel=null;editSquad=false;render()},
   open:d=>{sel=d.n;render();scrollTo(0,0)}, back:()=>{sel=null;render()},
   editsq:()=>{editSquad=true;render()},
@@ -252,6 +325,7 @@ const onClick=e=>{
 app.addEventListener("click",onClick); $("sheet").addEventListener("click",onClick);
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-a]"); if(b) A[b.dataset.a](b.dataset)});
 app.addEventListener("change",e=>{
+  const k=e.target.dataset.sum; if(k){ SUM[k]=e.target.value; if(k==="src"){SUM.type="";SUM.soldier="";} render(); return; }
   const f=e.target.dataset.f; if(!f) return; const s=sd(e.target.dataset.n);
   if(f==="notes") s.notes=e.target.value; else s.med[f]=e.target.value; save();
 });
