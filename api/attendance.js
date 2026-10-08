@@ -9,6 +9,8 @@ const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/
 const dayOf = ms => new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
 const b64 = s => Buffer.from(s).toString("base64url");
 const unb64 = s => Buffer.from(s, "base64url").toString();
+const nk0 = n => String(n).replace(/[׳’`]/g, "'");
+const cleanReasons = o => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).slice(0, 300).map(([k, v]) => [String(k).slice(0, 80), String(v ?? "").trim().slice(0, 120)]).filter(([, v]) => v));
 const clean = a => (Array.isArray(a) ? a.slice(0, 300).map(x => String(x).slice(0, 80)) : []);
 
 async function listAll(prefix) {
@@ -35,6 +37,22 @@ async function getActivity() {
 const labelOf = ms => new Date(ms).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jerusalem" });
 const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 const readReports = async blobs => (await Promise.all(blobs.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((a, c) => a.t - c.t);
+
+// Pushes one finished activity as a new column into the Google Sheet (via the Apps Script web app).
+async function pushSheet(rec) {
+  const url = process.env.SHEET_URL;
+  if (!url) return "off";
+  const date = dayOf(rec.t), noon = Date.parse(`${date}T12:00:00Z`), dow = new Date(noon).getUTCDay();
+  const d0 = noon - dow * 864e5, fm = ms => { const i = new Date(ms).toISOString(); return `${i.slice(8, 10)}.${i.slice(5, 7)}`; };
+  const reasons = new Map(Object.entries(rec.reasons || {}).map(([n, t]) => [nk0(n), t]));
+  const rows = [...rec.present.map(n => ({ name: n, value: true })), ...rec.missing.map(n => ({ name: n, value: reasons.get(nk0(n)) || false }))];
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, signal: AbortSignal.timeout(20000),
+      body: JSON.stringify({ secret: process.env.SHEET_SECRET || "", sheetName: `שבוע ${fm(d0)}-${fm(d0 + 6 * 864e5)}`, dateLabel: fm(noon), header: `${rec.activity}\n${timeOf(rec.t)}`, rows }) });
+    const j = await r.json().catch(() => null);
+    return j?.ok ? "ok" : "failed";
+  } catch (e) { console.error("sheet", e); return "failed"; }
+}
 
 // Every day that has ended gets one final PDF (kept 7 days); its raw data is then deleted.
 async function finalizeDays() {
@@ -66,12 +84,12 @@ async function getFonts() {
 
 async function buildPdf({ dateLabel, reports, timeOf }) {
   const [reg, bold] = await getFonts();
-  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 24, font: reg });
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 24, font: reg, bufferPages: true });
   doc.registerFont("B", bold);
   const chunks = []; doc.on("data", c => chunks.push(c));
   const done = new Promise(r => doc.on("end", () => r(Buffer.concat(chunks))));
   const PW = doc.page.width, PH = doc.page.height, M = 24, R = PW - M, W = PW - 2 * M;
-  const NAVY = "#16263a", RED = "#d9541e", GREEN = "#1e8a5a", ZEBRA = "#f5f1e8", LINE = "#d9d2c0";
+  const AMBER = "#e39a12", NAVY = "#16263a", RED = "#d9541e", GREEN = "#1e8a5a", ZEBRA = "#f5f1e8", LINE = "#d9d2c0";
 
   // --- RTL text helpers (word by word, so spaces and numbers stay correct) ---
   const cw = (t, size, f) => doc.font(f).fontSize(size).widthOfString(t);
@@ -132,6 +150,10 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const miss = reports.map(r => new Set(r.missing.map(nk)));
   const rows = [...disp].map(([k, n]) => { const abs = miss.map(s => s.has(k)); return { n, abs, total: abs.filter(Boolean).length }; })
     .sort((a, b) => b.total - a.total || a.n.localeCompare(b.n, "he"));
+  // explanations: number every explained absence (row by row) and keep a list for the last pages
+  const rs = reports.map(r => new Map(Object.entries(r.reasons || {}).filter(([, t]) => String(t).trim()).map(([n, t]) => [nk(n), String(t).trim()])));
+  const notes = []; let num = 0;
+  rows.forEach(row => { row.note = reports.map(() => 0); reports.forEach((r, j) => { if (row.abs[j]) { const t = rs[j].get(nk(row.n)); if (t) { row.note[j] = ++num; notes.push({ num, name: row.n, activity: r.activity, t: r.t, reason: t }); } } }); });
   const N = reports.length, colTot = reports.map((_, j) => rows.filter(r => r.abs[j]).length);
   const grand = rows.reduce((s, r) => s + r.total, 0);
 
@@ -143,7 +165,6 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const rowH = 14, nameH = 88, timeH = 14, hdrH = nameH + timeH, titleH = 32, footH = 16;
   const rowsPer = Math.floor((PH - 2 * M - titleH - hdrH - footH) / rowH);
   const rowChunks = []; for (let i = 0; i < Math.max(rows.length, 1); i += rowsPer) rowChunks.push([i, Math.min(rows.length, i + rowsPer)]);
-  const totalPages = Math.max(1, colChunks.length) * rowChunks.length;
 
   let page = 0;
   (colChunks.length ? colChunks : [[0, 0]]).forEach(([c0, c1]) => rowChunks.forEach(([r0, r1], ri) => {
@@ -151,7 +172,8 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
     doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 14, "B");
     doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות: ${N}  |  חיילים: ${rows.length}  |  סה״כ חיסורים: ${grand}`, R, M + 18, 9.5);
     if (colChunks.length > 1) rtl(`מציג פעילויות ${c0 + 1} עד ${c1}`, R - 330, M + 18, 9.5);
-    rtl(`עמוד ${page} מתוך ${totalPages}`, M + 90, M + 3, 9);
+    const lg = (xr, color, label) => { doc.rect(xr - 9, M + 3, 9, 9).fill(color); doc.fillColor("#555"); rtl(label, xr - 13, M + 2.5, 8.5); };
+    lg(R - 190, RED, "חסר"); if (notes.length) lg(R - 240, AMBER, "חסר עם הסבר (המספר מפנה לטבלת ההסברים)");
     let y = M + titleH;
     const tx = R - nameW - totW, cols = c1 - c0, left = tx - cols * cellW;
     doc.rect(left, y, nameW + totW + cols * cellW, hdrH).fill(NAVY);
@@ -169,6 +191,7 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
       doc.fillColor(row.total ? RED : "#999"); center(row.total || "–", R - nameW - totW, totW, y + 2.5, 10, row.total ? "B" : reg);
       for (let j = c0; j < c1; j++) if (row.abs[j]) {
         const xl = tx - (j - c0 + 1) * cellW, cx = xl + cellW / 2;
+        if (row.note[j]) { doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(AMBER); doc.fillColor("#fff"); center(row.note[j], xl, cellW, y + 3, 8, "B"); continue; }
         doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(RED);
         doc.moveTo(cx - 3, y + 4.5).lineTo(cx + 3, y + rowH - 4.5).moveTo(cx + 3, y + 4.5).lineTo(cx - 3, y + rowH - 4.5).strokeColor("#fff").lineWidth(1.1).stroke();
       }
@@ -183,6 +206,27 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
       for (let j = c0; j < c1; j++) center(colTot[j], tx - (j - c0 + 1) * cellW, cellW, y + 5, 9.5, "B");
     }
   }));
+  if (notes.length) {
+    const E = [{ h: "מס׳", w: 36 }, { h: "חייל", w: 130 }, { h: "פעילות", w: 200 }, { h: "הסבר", w: W - 36 - 130 - 200 }];
+    let y;
+    const head = () => {
+      doc.fillColor(NAVY); rtl("הסברים לחיסורים", R, y, 14, "B"); y += 26;
+      doc.rect(M, y, W, 18).fill(NAVY); let xr = R; doc.fillColor("#fff");
+      E.forEach(c => { rtl(c.h, xr - 6, y + 4, 10, "B"); xr -= c.w; }); y += 18;
+    };
+    doc.addPage(); y = M; head();
+    notes.forEach((nt, i) => {
+      const ls = [String(nt.num), nt.name, `${nt.activity} ${timeOf(nt.t)}`, nt.reason].map((t, k) => wrap(t, 10, reg, E[k].w - 12, 8));
+      const h = Math.max(...ls.map(l => l.length)) * 13 + 6;
+      if (y + h > PH - M - 12) { doc.addPage(); y = M; head(); }
+      if (i % 2) doc.rect(M, y, W, h).fill(ZEBRA);
+      doc.fillColor("#111"); let xr = R;
+      E.forEach((c, k) => { ls[k].forEach((ws, li) => draw(ws, xr - 6, y + 3 + li * 13, 10, reg)); xr -= c.w; });
+      doc.moveTo(M, y + h).lineTo(R, y + h).strokeColor(LINE).lineWidth(0.4).stroke(); y += h;
+    });
+  }
+  const totalPages = doc.bufferedPageRange().count;
+  for (let i = 0; i < totalPages; i++) { doc.switchToPage(i); doc.fillColor("#666"); rtl(`עמוד ${i + 1} מתוך ${totalPages}`, M + 90, M + 3, 9); }
   doc.end();
   return done;
 }
@@ -208,11 +252,13 @@ export default async function handler(req, res) {
         }
         const now = Date.now();
         const activity = (await getActivity()) || "ללא שם";
-        await putAny(`${ARC}${dayOf(now)}/${now}`, JSON.stringify({ activity, t: now, present: clean(b.present), missing: clean(b.missing), extra: clean(b.extra) }));
+        const rec = { activity, t: now, present: clean(b.present), missing: clean(b.missing), extra: clean(b.extra), reasons: cleanReasons(b.reasons) };
+        await putAny(`${ARC}${dayOf(now)}/${now}`, JSON.stringify(rec));
         await clearPrefix(LIST);
         await clearPrefix(DEV);
         await clearPrefix(ACT);
-        return res.json({ ok: true });
+        const sheet = await pushSheet(rec);
+        return res.json({ ok: true, sheet });
       }
       const name = norm(b.name);
       if (name.length < 2 || name.length > 60) return res.status(400).json({ error: "bad name" });
