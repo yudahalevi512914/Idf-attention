@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>יודה נוכחות</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f1e7;--card:#fffefa;--ink:#16263a;--mut:#6f7b88;--ok:#1e8a5a;--okbg:#e3f4ea;--bad:#d9541e;--badbg:#fdeadf;--sun:#f5b82e;--navy:#16263a;--line:#e8dfcc}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a28;--card:#172538;--ink:#f3efe4;--mut:#9aa8b8;--ok:#4cd694;--okbg:#14382b;--bad:#ff8a52;--badbg:#3a2418;--navy:#f3efe4;--line:#27384e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(245,184,46,.22),transparent 38%),radial-gradient(circle at 92% 0,rgba(30,138,90,.14),transparent 34%);color:var(--ink);font-family:Heebo,Arial,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:28px 16px}
+main{width:100%;max-width:460px;animation:in .5s ease both}
+@keyframes in{from{opacity:0;transform:translateY(12px)}}
+header{text-align:center;margin-bottom:22px}
+.logo{width:68px;height:68px;margin:0 auto 10px;border-radius:22px;background:var(--navy);color:var(--sun);display:grid;place-items:center;font-size:34px;transform:rotate(-6deg);box-shadow:0 8px 0 var(--sun)}
+h1{font-size:36px;font-weight:800;margin:14px 0 2px;letter-spacing:-.5px}
+h1 span{color:var(--ok)}
+.date{color:var(--mut);font-size:16px}
+.card{background:var(--card);border:2px solid var(--line);border-radius:24px;padding:24px;box-shadow:0 10px 0 var(--line)}
+.card h2{margin:0 0 14px;font-size:22px}
+input{width:100%;font:inherit;font-size:19px;padding:15px 16px;border-radius:14px;border:2px solid var(--line);background:var(--bg);color:var(--ink);outline:0;transition:.15s}
+input:focus{border-color:var(--ok);background:var(--card)}
+button{font:inherit;font-weight:800;cursor:pointer;border:0;border-radius:16px;padding:16px;width:100%;margin-top:14px;font-size:20px;background:var(--ok);color:#fff;box-shadow:0 5px 0 rgba(0,0,0,.22);transition:transform .08s,box-shadow .08s}
+button:active{transform:translateY(4px);box-shadow:0 1px 0 rgba(0,0,0,.22)}
+button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);box-shadow:none;font-size:15px;padding:10px 14px;width:auto;margin:0}
+.done{text-align:center}
+.done .big{font-size:64px;display:inline-block;animation:pop .6s cubic-bezier(.3,1.6,.5,1) both}
+@keyframes pop{from{transform:scale(0) rotate(-30deg)}}
+.done p{color:var(--mut);margin:4px 0 16px}
+.warn{display:flex;gap:10px;align-items:center;margin-top:16px;padding:12px 14px;border-radius:14px;background:var(--badbg);border:2px dashed var(--bad);color:var(--bad);font-size:15px;line-height:1.4;animation:pulse 2.4s ease-in-out infinite}
+.warn span{font-size:28px}.warn em{font-weight:800}
+@keyframes pulse{50%{transform:scale(1.02);box-shadow:0 0 0 6px rgba(217,84,30,.12)}}
+.pick{background:var(--bg);color:var(--ink);border:2px solid var(--line);box-shadow:none;font-size:18px;padding:12px;margin-top:8px}
+.pick:active{box-shadow:none}
+.hint{margin:16px 0 0;font-weight:600}
+.danger{color:var(--bad);border-color:var(--bad);margin-top:6px;width:100%}
+.rm{padding:4px 10px;font-size:13px;margin-inline-start:10px}
+.msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
+.stats{display:flex;gap:12px;margin:18px 0}
+.stat{flex:1;text-align:center;padding:14px;border-radius:18px;font-weight:600;color:var(--mut)}
+.stat b{display:block;font-size:34px;font-weight:800}
+.ok{background:var(--okbg)}.ok b{color:var(--ok)}.bad{background:var(--badbg)}.bad b{color:var(--bad)}
+.bar{height:12px;border-radius:9px;background:var(--line);overflow:hidden;margin-bottom:18px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--sun),var(--ok));border-radius:9px;transition:width .8s ease}
+ul{list-style:none;padding:0;margin:8px 0 18px}
+li{padding:10px 0;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between}
+li small{color:var(--mut)}
+h3{margin:16px 0 0;font-size:18px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.conf{position:fixed;top:-20px;font-size:22px;pointer-events:none;animation:fall 2.2s ease-in forwards}
+@keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}
+</style>
+</head>
+<body><main id="app"></main>
+<script>
+// ===== הגדרות =====
+const ROSTER = [
+  "נבו היימן",
+  "יואב תומר",
+  "ג׳ק בן חורין",
+  "גלעד ניאזוב",
+  "ניב ג׳רבי",
+  "ארז נבון",
+  "יהודה הלוי",
+  "איתי זיו",
+  "יהלי בנישו",
+  "עידן גבאי",
+  "מיכאל מנור",
+  "תומר אמתי",
+  "דניאל ריינס",
+  "לירוי חולודנקו",
+  "עמית דרוקר",
+  "ינון רותם פלד",
+  "רואי חזן",
+  "יותם רוטשילד",
+  "אור בהט",
+  "ארבל יצחקי",
+  "גור סלע",
+  "יהונתן הררי",
+  "עומר רז",
+  "מתן ענבי",
+  "ליאור סלבין",
+  "רואי טרייבנד",
+  "אילאי גירסטין"
+];
+// ==================
+
+const app = document.getElementById("app");
+const norm = n => n.trim().replace(/\s+/g," ").replace(/[׳’`]/g,"'");
+const call = async (qs,body) => {
+  const r = await fetch("/api/attendance"+qs, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
+  if(!r.ok){
+    const j=await r.json().catch(()=>({}));
+    const e=new Error(r.status===401?"קוד שגוי":j.detail==="no_blob_token"?"שגיאת שרת: מאגר ה-Blob לא מחובר לפרויקט":"שגיאת שרת"+(j.detail?" ("+j.detail+")":r.status===404?" (api לא נמצא)":""));
+    e.status=r.status; e.data=j; throw e;
+  }
+  return r;
+};
+const jcall = async (qs,body) => (await call(qs,body)).json();
+const devId = () => {
+  let d=ls.get("dev")||(document.cookie.match(/(?:^|; )dev=([\w-]+)/)||[])[1];
+  if(!d) d=(crypto.randomUUID?crypto.randomUUID():Date.now().toString(16)+Math.random().toString(16).slice(2)+Math.random().toString(16).slice(2));
+  ls.set("dev",d); document.cookie="dev="+d+";max-age=31536000;path=/;SameSite=Lax"; return d;
+};
+const ls = {get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){ location.hash==="#admin" ? admin() : member(); }
+window.addEventListener("hashchange",render);
+
+async function member(){
+  const saved=ls.get("name");
+  let info={present:false,activity:"",deviceName:""}; try{ info=await jcall(`?name=${encodeURIComponent(saved||"")}&dev=${devId()}`); }catch(e){}
+  const head=`<header><div class="logo">✋</div><h1>יודה <span>נוכחות</span></h1><div class="date">${info.activity?esc(info.activity):"דיווח נוכחות"}</div></header>`;
+  const who=info.deviceName||(info.present&&saved)||"";
+  if(who){
+    ls.set("name",who);
+    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(who)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף. אם נרשמת בטעות, פנה למנהל.</p></div>`;
+    return confetti();
+  }
+  form(head,saved||"");
+}
+function confetti(){
+  const e=["🎉","✨","⭐","🎊","💚","🟡"];
+  for(let i=0;i<26;i++){const c=document.createElement("span");c.className="conf";c.textContent=e[i%e.length];
+    c.style.left=Math.random()*100+"vw";c.style.animationDelay=Math.random()*.6+"s";document.body.appendChild(c);setTimeout(()=>c.remove(),3200);}
+}
+const strip=s=>s.replace(/[׳'’`"״\u0591-\u05C7]/g,"").trim();
+const toks=s=>strip(s).split(/\s+/).filter(Boolean);
+const lev=(a,b)=>{const d=Array.from({length:a.length+1},(_,i)=>[i,...Array(b.length).fill(0)]);for(let j=1;j<=b.length;j++)d[0][j]=j;for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));return d[a.length][b.length]};
+const tokDist=(t,r)=>{ if(t===r) return 0; if(t.length>=3&&r.startsWith(t)) return .5; const lim=t.length<=3?0:t.length<=5?1:2; const x=lev(t,r); return x<=lim?x:null; };
+function resolve(input){
+  const T=toks(input), scored=[];
+  ROSTER.forEach(name=>{
+    const R=toks(name); let total=0, ok=true;
+    for(const t of T){ let best=null,bi=-1; R.forEach((x,i)=>{const d=tokDist(t,x); if(d!==null&&(best===null||d<best)){best=d;bi=i}}); if(best===null){ok=false;break} total+=best; R.splice(bi,1); }
+    if(ok) scored.push({name,total});
+  });
+  if(scored.length){ const min=Math.min(...scored.map(x=>x.total)); return {matches:scored.filter(x=>x.total===min).map(x=>x.name),sugg:[]}; }
+  const sugg=ROSTER.map(name=>({name,d:Math.min(...toks(name).flatMap(r=>T.map(t=>lev(t,r)/Math.max(t.length,r.length))))})).filter(x=>x.d<=.5).sort((a,b)=>a.d-b.d).slice(0,3).map(x=>x.name);
+  return {matches:[],sugg};
+}
+function form(head,name){
+  app.innerHTML=head+`<div class="card"><h2>האם אתה פה עכשיו? 👀</h2>
+  <input id="n" list="r" value="${esc(name)}" placeholder="שם מלא, אפשר להתחיל להקליד" autocomplete="off">
+  <datalist id="r">${ROSTER.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
+  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div id="ch"></div><div class="msg" id="m"></div></div>`;
+  const m=document.getElementById("m"), ch=document.getElementById("ch");
+  const submit=async n=>{ try{ await jcall("",{name:n,dev:devId()}); ls.set("name",n); member(); } catch(e){ if(e.status===409&&e.data?.name){ ls.set("name",e.data.name); member(); } else m.textContent=e.message; } };
+  const choices=(title,names,extra)=>{
+    ch.innerHTML=`<p class="hint">${title}</p>`+names.map((n,i)=>`<button class="pick" data-i="${i}">${esc(n)}</button>`).join("")+(extra?`<button class="sec" style="margin-top:10px" id="asis">רשמו אותי כמו שכתבתי</button>`:"");
+    ch.querySelectorAll(".pick").forEach(b=>b.onclick=()=>submit(names[b.dataset.i]));
+    if(extra) document.getElementById("asis").onclick=()=>submit(extra);
+  };
+  document.getElementById("go").onclick=()=>{
+    const n=norm(document.getElementById("n").value); m.textContent=""; ch.innerHTML="";
+    if(n.length<2) return m.textContent="נשכח לכתוב את השם 🙂";
+    if(!ROSTER.length) return submit(n);
+    const r=resolve(n);
+    if(r.matches.length===1) return submit(r.matches[0]);
+    if(r.matches.length>1) return choices("יש כמה כאלה, מי אתה?",r.matches);
+    if(r.sugg.length) return choices("לא מצאנו בדיוק. אולי התכוונת ל…",r.sugg,n);
+    choices("לא מצאנו את השם ברשימה. בדוק את הכתיב, או:",[],n);
+  };
+
+}
+
+async function makePdf(pin,btn){
+  const old=btn.textContent; btn.textContent="מכין…";
+  try{
+    const r=await call(`?pin=${encodeURIComponent(pin)}&report=1`);
+    if((r.headers.get("content-type")||"").includes("json")){ alert("אין עדיין פעילויות שנשמרו להיום. כדי להכניס פעילות לדוח צריך לסיים אותה ולאפס."); return; }
+    const url=URL.createObjectURL(await r.blob());
+    const a=document.createElement("a"); a.href=url; a.download="attendance.pdf"; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){ alert("יצירת ה-PDF נכשלה: "+e.message); }
+  finally{ btn.textContent=old; }
+}
+
+async function finals(pin){
+  app.innerHTML=`<header><div class="logo">📁</div><h1>דוחות <span>שמורים</span></h1><div class="date">טוען…</div></header>`;
+  let list=[]; try{ list=(await jcall(`?pin=${encodeURIComponent(pin)}&finals=1`)).finals; }catch(e){ alert(e.message); return admin(); }
+  app.innerHTML=`<header><div class="logo">📁</div><h1>דוחות <span>שמורים</span></h1><div class="date">הדוח הסופי של כל יום, 7 הימים האחרונים</div></header>
+  <div class="card">${list.length?list.map(f=>`<li style="list-style:none"><span>${esc(f.label)}</span><button class="sec dl" data-d="${f.date}">הורד</button></li>`).join(""):"<p>עדיין אין דוחות שמורים. דוח נשמר אוטומטית אחרי חצות.</p>"}<button class="sec" id="bk" style="margin-top:12px;width:100%">חזרה</button></div>`;
+  document.getElementById("bk").onclick=admin;
+  document.querySelectorAll(".dl").forEach(b=>b.onclick=async()=>{
+    const old=b.textContent; b.textContent="מוריד…";
+    try{ const r=await call(`?pin=${encodeURIComponent(pin)}&final=${b.dataset.d}`); const url=URL.createObjectURL(await r.blob());
+      const a=document.createElement("a"); a.href=url; a.download=`attendance-${b.dataset.d}.pdf`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
+    }catch(e){ alert(e.message); } finally{ b.textContent=old; } });
+}
+async function admin(){
+  if(sessionStorage.getItem("ok")!=="1"){
+    const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
+    sessionStorage.setItem("pin",p); sessionStorage.setItem("ok","1");
+  }
+  const pin=sessionStorage.getItem("pin");
+  app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">טוען…</div></header>`;
+  let data={}; try{ data=await jcall(`?pin=${encodeURIComponent(pin)}`); }catch(e){ sessionStorage.clear(); app.innerHTML=`<div class="card">${esc(e.message)} <button class="sec" onclick="location.reload()">נסה שוב</button></div>`; return; }
+  const here=data.list.sort((a,b)=>a.t-b.t);
+  const hereKeys=new Set(here.map(h=>norm(h.name)));
+  const missing=ROSTER.filter(r=>!hereKeys.has(norm(r)));
+  const extra=here.filter(h=>!ROSTER.some(r=>norm(r)===norm(h.name)));
+  const time=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
+  const pct=ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0;
+  app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול</div></header>
+  <div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 10px">שם הפעילות</h3>
+    <div class="row"><input id="act" value="${esc(data.activity||"")}" placeholder="למשל: אימון בוקר" style="flex:1"><button class="sec" id="sv">שמור</button></div></div>
+  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button><button class="sec" id="fin">📁 דוחות שמורים</button></div>
+  <div class="bar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
+  <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
+  <div class="card">
+    <h3>✅ נוכחים</h3><ul>${here.map((h,i)=>`<li><span>${esc(h.name)}</span><span><small>${time(h.t)}</small><button class="sec rm" data-i="${i}">הסר</button></span></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
+    ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
+    ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
+    <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
+  </div>`;
+  document.getElementById("rf").onclick=admin;
+  document.querySelectorAll(".rm").forEach(b=>b.onclick=async()=>{
+    const n=here[b.dataset.i].name; if(!confirm(`להסיר את ${n} מהרשימה? המכשיר שלו יוכל לדווח שוב.`)) return;
+    try{ await jcall("",{action:"remove",pin,name:n}); admin(); }catch(e){ alert(e.message); }
+  });
+  document.getElementById("sv").onclick=async()=>{ try{ await jcall("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
+  document.getElementById("rs").onclick=async()=>{
+    if(!confirm(`לסיים את "${data.activity||"הפעילות"}", לשמור את החסרים לדוח היומי ולאפס את הרשימה?`)) return;
+    try{ await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
+  };
+  document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
+  document.getElementById("fin").onclick=()=>finals(pin);
+  document.getElementById("cp").onclick=()=>{
+    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
+    navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
+  };
+}
+render();
+</script>
+</body></html>
