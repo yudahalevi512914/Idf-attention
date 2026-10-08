@@ -74,15 +74,38 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const NAVY = "#16263a", RED = "#d9541e", GREEN = "#1e8a5a", ZEBRA = "#f5f1e8", LINE = "#d9d2c0";
 
   // --- RTL text helpers (word by word, so spaces and numbers stay correct) ---
-  const wid = (s, size, f) => doc.font(f).fontSize(size).widthOfString(s);
+  const cw = (t, size, f) => doc.font(f).fontSize(size).widthOfString(t);
+  const BR = { "(": ")", ")": "(", "[": "]", "]": "[" };
+  // split a word into Hebrew/neutral runs, left-to-right runs (numbers, latin) and brackets
+  const segs = w => {
+    const out = []; let last = 0;
+    w.replace(/[A-Za-z0-9]+(?:[.:\/%-][A-Za-z0-9]+)*|[()\[\]]/g, (m, i) => {
+      if (i > last) out.push({ t: w.slice(last, i), k: "h" });
+      out.push({ t: m, k: /^[()\[\]]$/.test(m) ? "b" : "l" }); last = i + m.length; return m;
+    });
+    if (last < w.length) out.push({ t: w.slice(last), k: "h" });
+    return out;
+  };
+  const segW = (g, size, f) => g.k === "h" ? cw(g.t, size, f) : g.k === "b" ? cw(BR[g.t], size, f) : [...g.t].reduce((a, c) => a + cw(c, size, f), 0);
+  const wid = (w, size, f) => segs(w).reduce((a, g) => a + segW(g, size, f), 0);
+  const drawWord = (w, xr, y, size, f) => {
+    let x = xr;
+    for (const g of segs(w)) {
+      x -= segW(g, size, f); doc.font(f).fontSize(size);
+      if (g.k === "h") doc.text(g.t, x, y, { lineBreak: false });
+      else if (g.k === "b") doc.text(BR[g.t], x, y, { lineBreak: false });
+      else { let cx = x; for (const c of g.t) { doc.text(c, cx, y, { lineBreak: false }); cx += cw(c, size, f); } }
+    }
+    return xr - x;
+  };
   const gapOf = size => size * 0.32;
-  const wordsW = (ws, size, f) => ws.reduce((s, w) => s + wid(w, size, f), 0) + gapOf(size) * Math.max(0, ws.length - 1);
+  const wordsW = (ws, size, f) => ws.reduce((x, w) => x + wid(w, size, f), 0) + gapOf(size) * Math.max(0, ws.length - 1);
   const fit = (t, size, f, maxW) => {
     let ws = String(t).split(/\s+/).filter(Boolean);
     if (wordsW(ws, size, f) > maxW) { let s = ws.join(" "); while (s.length > 1 && wordsW((s + ".").split(/\s+/), size, f) > maxW) s = s.slice(0, -1); ws = (s + ".").split(/\s+/); }
     return ws;
   };
-  const draw = (ws, xr, y, size, f) => { doc.font(f).fontSize(size); let x = xr; for (const w of ws) { x -= wid(w, size, f); doc.text(w, x, y, { lineBreak: false }); x -= gapOf(size); } };
+  const draw = (ws, xr, y, size, f) => { let x = xr; for (const w of ws) { x -= drawWord(w, x, y, size, f); x -= gapOf(size); } };
   const rtl = (t, xr, y, size, f = reg, maxW = 1e9) => draw(fit(t, size, f, maxW), xr, y, size, f);
   const center = (t, xl, w, y, size, f = reg) => { doc.font(f).fontSize(size).text(String(t), xl, y, { width: w, align: "center", lineBreak: false }); };
   // wrap into at most maxLines lines, each no wider than maxW
