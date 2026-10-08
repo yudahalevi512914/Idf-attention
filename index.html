@@ -36,6 +36,7 @@ button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);
 .hint{margin:16px 0 0;font-weight:600}
 .danger{color:var(--bad);border-color:var(--bad);margin-top:6px;width:100%}
 .rm{padding:4px 10px;font-size:13px;margin-inline-start:10px}
+.rsn{width:48%;font-size:14px;padding:6px 9px;margin:0;border-radius:10px}
 .msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
 .stats{display:flex;gap:12px;margin:18px 0}
 .stat{flex:1;text-align:center;padding:14px;border-radius:18px;font-weight:600;color:var(--mut)}
@@ -190,6 +191,9 @@ async function finals(pin){
       const a=document.createElement("a"); a.href=url; a.download=`attendance-${b.dataset.d}.pdf`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
     }catch(e){ alert(e.message); } finally{ b.textContent=old; } });
 }
+const COMMON=["רופא","מטבח","שפ","בתים","נהג","מתפלל","לוגיסטיקה","פציעה","חופשה","תורנות"];
+const RS=()=>{try{return JSON.parse(localStorage.getItem("reasons")||"{}")}catch(e){return{}}};
+const saveRS=o=>{try{localStorage.setItem("reasons",JSON.stringify(o))}catch(e){}};
 async function admin(){
   if(sessionStorage.getItem("ok")!=="1"){
     const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
@@ -212,7 +216,7 @@ async function admin(){
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
     <h3>✅ נוכחים</h3><ul>${here.map((h,i)=>`<li><span>${esc(h.name)}</span><span><small>${time(h.t)}</small><button class="sec rm" data-i="${i}">הסר</button></span></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
-    ${ROSTER.length?`<h3>❌ חסרים</h3><ul>${missing.map(m=>`<li>${esc(m)}</li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
+    ${ROSTER.length?`<h3>❌ חסרים <span class="hint" style="font-weight:400">(אפשר להוסיף הסבר)</span></h3><datalist id="rl">${[...new Set([...COMMON,...Object.values(RS())])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist><ul>${missing.map(m=>`<li><span>${esc(m)}</span><input class="rsn" data-n="${esc(m)}" list="rl" placeholder="הסבר" value="${esc(RS()[m]||"")}"></li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
     ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
     <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
   </div>`;
@@ -222,14 +226,19 @@ async function admin(){
     try{ await jcall("",{action:"remove",pin,name:n}); admin(); }catch(e){ alert(e.message); }
   });
   document.getElementById("sv").onclick=async()=>{ try{ await jcall("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
+  document.querySelectorAll(".rsn").forEach(i=>i.oninput=()=>{ const o=RS(); if(i.value.trim()) o[i.dataset.n]=i.value.trim(); else delete o[i.dataset.n]; saveRS(o); });
   document.getElementById("rs").onclick=async()=>{
     if(!confirm(`לסיים את "${data.activity||"הפעילות"}", לשמור את החסרים לדוח היומי ולאפס את הרשימה?`)) return;
-    try{ await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name)}); admin(); }catch(e){ alert(e.message); }
+    try{
+      const all=RS(), reasons={}; missing.forEach(m=>{ if(all[m]) reasons[m]=all[m]; });
+      const res=await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name),reasons});
+      saveRS({}); if(res.sheet==="failed") alert("הפעילות נשמרה, אבל העדכון ל-Google Sheets נכשל. בדוק את ההגדרות."); admin();
+    }catch(e){ alert(e.message); }
   };
   document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
   document.getElementById("fin").onclick=()=>finals(pin);
   document.getElementById("cp").onclick=()=>{
-    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.join("\n")}`;
+    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.map(m=>RS()[m]?`${m} — ${RS()[m]}`:m).join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
   };
 }
