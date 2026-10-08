@@ -3,7 +3,7 @@ import PDFDocument from "pdfkit";
 
 const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
-const LIST = "attendance/list/", ACT = "attendance/activity/", ARC = "attendance/archive/", DEV = "attendance/dev/";
+const LIST = "attendance/list/", ACT = "attendance/activity/", ARC = "attendance/archive/", DEV = "attendance/dev/", FINAL = "attendance/final/";
 const okDev = d => /^[\w-]{16,64}$/.test(d || "");
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
 const dayOf = ms => new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
@@ -19,8 +19,8 @@ async function listAll(prefix) {
   } while (cursor);
   return out;
 }
-async function putAny(path, body) {
-  const o = { token, addRandomSuffix: false, allowOverwrite: true };
+async function putAny(path, body, contentType) {
+  const o = { token, addRandomSuffix: false, allowOverwrite: true, ...(contentType ? { contentType } : {}) };
   try { return await put(path, body, { ...o, access: "public" }); }
   catch (e) { if (!/private/i.test(String(e?.message))) throw e; return put(path, body, { ...o, access: "private" }); }
 }
@@ -32,13 +32,26 @@ async function getActivity() {
   const a = await listAll(ACT);
   return a.length ? unb64(a[0].pathname.slice(ACT.length)) : "";
 }
-// keeps only today and yesterday
-async function purge() {
-  const keep = dayOf(Date.now() - 24 * 3600e3);
-  const old = (await listAll(ARC)).filter(b => b.pathname.slice(ARC.length).split("/")[0] < keep);
+const labelOf = ms => new Date(ms).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jerusalem" });
+const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
+const readReports = async blobs => (await Promise.all(blobs.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((a, c) => a.t - c.t);
+
+// Every day that has ended gets one final PDF (kept 7 days); its raw data is then deleted.
+async function finalizeDays() {
+  const today = dayOf(Date.now());
+  const byDay = {};
+  for (const b of await listAll(ARC)) { const d = b.pathname.slice(ARC.length).split("/")[0]; if (d < today) (byDay[d] ||= []).push(b); }
+  for (const [day, blobs] of Object.entries(byDay)) {
+    const reports = await readReports(blobs);
+    if (!reports.length) { await del(blobs.map(x => x.url), { token }); continue; }
+    const pdf = await buildPdf({ dateLabel: labelOf(`${day}T09:00:00Z`), reports, timeOf });
+    await putAny(`${FINAL}${day}.pdf`, pdf, "application/pdf");
+    await del(blobs.map(x => x.url), { token });
+  }
+  const keepFrom = dayOf(Date.now() - 6 * 24 * 3600e3);
+  const old = (await listAll(FINAL)).filter(b => b.pathname.slice(FINAL.length, FINAL.length + 10) < keepFrom);
   if (old.length) await del(old.map(b => b.url), { token });
 }
-
 
 
 const FONT = "https://raw.githubusercontent.com/google/fonts/main/ofl/alef/Alef-Regular.ttf";
@@ -53,25 +66,41 @@ async function getFonts() {
 
 async function buildPdf({ dateLabel, reports, timeOf }) {
   const [reg, bold] = await getFonts();
-  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 30, font: reg, autoFirstPage: true });
+  const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 24, font: reg });
   doc.registerFont("B", bold);
   const chunks = []; doc.on("data", c => chunks.push(c));
   const done = new Promise(r => doc.on("end", () => r(Buffer.concat(chunks))));
-  const PW = doc.page.width, PH = doc.page.height, M = 30, R = PW - M, W = PW - 2 * M;
+  const PW = doc.page.width, PH = doc.page.height, M = 24, R = PW - M, W = PW - 2 * M;
   const NAVY = "#16263a", RED = "#d9541e", GREEN = "#1e8a5a", ZEBRA = "#f5f1e8", LINE = "#d9d2c0";
 
-  // --- text helpers (RTL, word by word) ---
+  // --- RTL text helpers (word by word, so spaces and numbers stay correct) ---
   const wid = (s, size, f) => doc.font(f).fontSize(size).widthOfString(s);
-  const rtl = (t, xr, y, size, f = reg, maxW = 1e9) => {
-    let words = String(t).split(/\s+/).filter(Boolean);
-    const gap = size * 0.32, total = ws => ws.reduce((s, w) => s + wid(w, size, f), 0) + gap * (ws.length - 1);
-    if (total(words) > maxW) { let s = words.join(" "); while (s.length > 1 && total((s + ".").split(/\s+/)) > maxW) s = s.slice(0, -1); words = (s + ".").split(/\s+/); }
-    doc.font(f).fontSize(size);
-    let x = xr; for (const w of words) { x -= wid(w, size, f); doc.text(w, x, y, { lineBreak: false }); x -= gap; }
+  const gapOf = size => size * 0.32;
+  const wordsW = (ws, size, f) => ws.reduce((s, w) => s + wid(w, size, f), 0) + gapOf(size) * Math.max(0, ws.length - 1);
+  const fit = (t, size, f, maxW) => {
+    let ws = String(t).split(/\s+/).filter(Boolean);
+    if (wordsW(ws, size, f) > maxW) { let s = ws.join(" "); while (s.length > 1 && wordsW((s + ".").split(/\s+/), size, f) > maxW) s = s.slice(0, -1); ws = (s + ".").split(/\s+/); }
+    return ws;
   };
+  const draw = (ws, xr, y, size, f) => { doc.font(f).fontSize(size); let x = xr; for (const w of ws) { x -= wid(w, size, f); doc.text(w, x, y, { lineBreak: false }); x -= gapOf(size); } };
+  const rtl = (t, xr, y, size, f = reg, maxW = 1e9) => draw(fit(t, size, f, maxW), xr, y, size, f);
   const center = (t, xl, w, y, size, f = reg) => { doc.font(f).fontSize(size).text(String(t), xl, y, { width: w, align: "center", lineBreak: false }); };
+  // wrap into at most maxLines lines, each no wider than maxW
+  const wrap = (t, size, f, maxW, maxLines) => {
+    const ws = String(t).split(/\s+/).filter(Boolean), lines = [[]];
+    for (const w of ws) { const cur = lines[lines.length - 1]; if (cur.length && wordsW([...cur, w], size, f) > maxW && lines.length < maxLines) lines.push([w]); else cur.push(w); }
+    return lines.map(l => fit(l.join(" "), size, f, maxW));
+  };
+  // vertical header text, reads bottom-to-top, sits on the bottom edge yb, centered in a cell of width cw at xl
+  const vtext = (t, xl, cw, yb, maxW) => {
+    const size = cw >= 32 ? 10 : 8, lh = size * 1.2, maxLines = Math.max(1, Math.min(3, Math.floor((cw - 3) / lh)));
+    const lines = wrap(t, size, bold, maxW, maxLines), block = lines.length * lh;
+    doc.save(); doc.translate(xl + cw / 2, yb); doc.rotate(-90);
+    lines.forEach((ws, i) => draw(ws, wordsW(ws, size, bold), -block / 2 + i * lh, size, bold));
+    doc.restore();
+  };
 
-  // --- data: all names x all activities ---
+  // --- data: every name x every activity ---
   const nk = n => String(n).replace(/[׳’`]/g, "'");
   const extras = new Set(reports.flatMap(r => r.extra.map(nk)));
   const disp = new Map();
@@ -84,66 +113,47 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const grand = rows.reduce((s, r) => s + r.total, 0);
 
   // --- layout ---
-  const nameW = 130, totW = 44, avail = W - nameW - totW;
-  const cellW = Math.max(22, Math.min(40, Math.floor(avail / Math.max(N, 1))));
+  const nameW = 120, totW = 44, avail = W - nameW - totW;
+  const cellW = Math.max(21, Math.min(56, Math.floor(avail / Math.max(N, 1))));
   const perPage = Math.floor(avail / cellW);
   const colChunks = []; for (let i = 0; i < N; i += perPage) colChunks.push([i, Math.min(N, i + perPage)]);
-  const rowH = 15, hdrH = 36, titleH = 34, footH = 16;
+  const rowH = 14, nameH = 88, timeH = 14, hdrH = nameH + timeH, titleH = 32, footH = 16;
   const rowsPer = Math.floor((PH - 2 * M - titleH - hdrH - footH) / rowH);
   const rowChunks = []; for (let i = 0; i < Math.max(rows.length, 1); i += rowsPer) rowChunks.push([i, Math.min(rows.length, i + rowsPer)]);
-  const totalPages = 1 + colChunks.length * rowChunks.length;
+  const totalPages = Math.max(1, colChunks.length) * rowChunks.length;
 
-  // --- page 1: summary + legend ---
-  doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 24, "B");
-  doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות: ${N}  |  חיילים: ${rows.length}  |  סה״כ חיסורים: ${grand}`, R, M + 34, 12);
-  doc.fillColor(NAVY); rtl("מקרא פעילויות", R, M + 64, 15, "B");
-  doc.moveTo(M, M + 84).lineTo(R, M + 84).strokeColor(GREEN).lineWidth(1.5).stroke();
-  const lc = N > 36 ? 3 : N > 16 ? 2 : 1, per = Math.ceil(N / lc), lw = W / lc, ly = M + 94, lh = 15.5;
-  reports.forEach((r, i) => {
-    const c = Math.floor(i / per), y = ly + (i % per) * lh, xr = R - c * lw;
-    doc.fillColor(RED); rtl(`${i + 1}.`, xr, y, 11, "B");
-    doc.fillColor("#222"); rtl(r.activity, xr - 26, y, 11, reg, lw - 90);
-    doc.fillColor("#777"); rtl(timeOf(r.t), xr - lw + 60, y, 10);
-  });
-  doc.fillColor("#777"); rtl(`עמוד 1 מתוך ${totalPages}`, R, PH - M - 12, 9);
-
-  // --- table pages ---
-  let page = 1;
-  colChunks.forEach(([c0, c1]) => rowChunks.forEach(([r0, r1], ri) => {
-    doc.addPage(); page++;
+  let page = 0;
+  (colChunks.length ? colChunks : [[0, 0]]).forEach(([c0, c1]) => rowChunks.forEach(([r0, r1], ri) => {
+    if (page) doc.addPage(); page++;
     doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 14, "B");
-    doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות ${c0 + 1} עד ${c1}  |  ממוין לפי מספר חיסורים`, R, M + 18, 9.5);
+    doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות: ${N}  |  חיילים: ${rows.length}  |  סה״כ חיסורים: ${grand}`, R, M + 18, 9.5);
+    if (colChunks.length > 1) rtl(`מציג פעילויות ${c0 + 1} עד ${c1}`, R - 330, M + 18, 9.5);
     rtl(`עמוד ${page} מתוך ${totalPages}`, M + 90, M + 3, 9);
     let y = M + titleH;
-    // header
-    const tx = R - nameW - totW;
-    doc.rect(tx - (c1 - c0) * cellW, y, nameW + totW + (c1 - c0) * cellW, hdrH).fill(NAVY);
-    doc.fillColor("#fff"); rtl("שם", R - 8, y + 11, 11, "B"); center("סה״כ", R - nameW - totW, totW, y + 11, 10, "B");
+    const tx = R - nameW - totW, cols = c1 - c0, left = tx - cols * cellW;
+    doc.rect(left, y, nameW + totW + cols * cellW, hdrH).fill(NAVY);
+    doc.fillColor("#fff"); rtl("שם", R - 8, y + hdrH - 20, 11, "B"); center("סה״כ", R - nameW - totW, totW, y + hdrH - 20, 10, "B");
     for (let j = c0; j < c1; j++) {
       const xl = tx - (j - c0 + 1) * cellW;
-      doc.fillColor("#fff"); center(j + 1, xl, cellW, y + 5, 11, "B");
-      doc.fillColor("#c9d3de"); center(timeOf(reports[j].t), xl, cellW, y + 21, 6.5);
+      doc.fillColor("#fff"); vtext(reports[j].activity, xl, cellW, y + nameH - 3, nameH - 8);
+      doc.fillColor("#c9d3de"); center(timeOf(reports[j].t), xl, cellW, y + nameH + 3, 6.5);
     }
-    y += hdrH;
-    // body
+    y += hdrH; const top = y;
     for (let i = r0; i < r1; i++, y += rowH) {
       const row = rows[i];
-      if ((i - r0) % 2) doc.rect(tx - (c1 - c0) * cellW, y, (c1 - c0) * cellW + totW + nameW, rowH).fill(ZEBRA);
-      doc.fillColor("#111"); rtl(row.n, R - 8, y + 3, 10.5, reg, nameW - 14);
-      doc.fillColor(row.total ? RED : "#999"); center(row.total || "–", R - nameW - totW, totW, y + 3, 10.5, row.total ? "B" : reg);
+      if ((i - r0) % 2) doc.rect(left, y, R - left, rowH).fill(ZEBRA);
+      doc.fillColor("#111"); rtl(row.n, R - 8, y + 2.5, 10, reg, nameW - 14);
+      doc.fillColor(row.total ? RED : "#999"); center(row.total || "–", R - nameW - totW, totW, y + 2.5, 10, row.total ? "B" : reg);
       for (let j = c0; j < c1; j++) if (row.abs[j]) {
-        const xl = tx - (j - c0 + 1) * cellW;
+        const xl = tx - (j - c0 + 1) * cellW, cx = xl + cellW / 2;
         doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(RED);
-        doc.moveTo(xl + cellW / 2 - 3, y + 4.5).lineTo(xl + cellW / 2 + 3, y + rowH - 4.5).moveTo(xl + cellW / 2 + 3, y + 4.5).lineTo(xl + cellW / 2 - 3, y + rowH - 4.5).strokeColor("#fff").lineWidth(1.1).stroke();
+        doc.moveTo(cx - 3, y + 4.5).lineTo(cx + 3, y + rowH - 4.5).moveTo(cx + 3, y + 4.5).lineTo(cx - 3, y + rowH - 4.5).strokeColor("#fff").lineWidth(1.1).stroke();
       }
     }
-    // grid
-    const top = M + titleH + hdrH, left = tx - (c1 - c0) * cellW;
     doc.strokeColor(LINE).lineWidth(0.4);
-    for (let j = 0; j <= c1 - c0; j++) doc.moveTo(tx - j * cellW, top).lineTo(tx - j * cellW, y).stroke();
+    for (let j = 0; j <= cols; j++) doc.moveTo(tx - j * cellW, top).lineTo(tx - j * cellW, y).stroke();
     doc.moveTo(R - nameW, top).lineTo(R - nameW, y).stroke(); doc.moveTo(R, top).lineTo(R, y).stroke();
     for (let k = 0; k <= r1 - r0; k++) doc.moveTo(left, top + k * rowH).lineTo(R, top + k * rowH).stroke();
-    // totals row on the last row page
     if (ri === rowChunks.length - 1) {
       doc.rect(left, y + 2, R - left, footH).fill(NAVY);
       doc.fillColor("#fff"); rtl("חסרים בפעילות", R - 8, y + 5, 10, "B"); center(grand, R - nameW - totW, totW, y + 5, 10, "B");
@@ -179,7 +189,6 @@ export default async function handler(req, res) {
         await clearPrefix(LIST);
         await clearPrefix(DEV);
         await clearPrefix(ACT);
-        await purge();
         return res.json({ ok: true });
       }
       const name = norm(b.name);
@@ -193,16 +202,30 @@ export default async function handler(req, res) {
     }
 
     const { name, pin, report } = req.query;
+    if (req.query.cron !== undefined) {
+      const sec = process.env.CRON_SECRET;
+      if (sec && req.headers.authorization !== `Bearer ${sec}`) return res.status(401).json({ error: "unauthorized" });
+      await finalizeDays();
+      return res.json({ ok: true });
+    }
+    if (req.query.finals !== undefined || req.query.final !== undefined) {
+      if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+      await finalizeDays();
+      const all = (await listAll(FINAL)).map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), url: b.url })).sort((a, c) => (a.date < c.date ? 1 : -1));
+      if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: labelOf(`${x.date}T09:00:00Z`) })) });
+      const f = all.find(x => x.date === req.query.final);
+      if (!f) return res.status(404).json({ error: "not found" });
+      const buf = Buffer.from(await (await fetch(f.url)).arrayBuffer());
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="attendance-${f.date}.pdf"`);
+      return res.end(buf);
+    }
     if (report !== undefined) {
       if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
       const now = Date.now(), date = dayOf(now);
-      const blobs = await listAll(`${ARC}${date}/`);
-      const reports = (await Promise.all(blobs.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((a, c) => a.t - c.t);
-      await purge();
+      const reports = await readReports(await listAll(`${ARC}${date}/`));
       if (!reports.length) return res.json({ empty: true });
-      const dateLabel = new Date(now).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jerusalem" });
-      const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
-      const pdf = await buildPdf({ dateLabel, reports, timeOf });
+      const pdf = await buildPdf({ dateLabel: labelOf(now), reports, timeOf });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="attendance-${date}.pdf"`);
       return res.end(pdf);
