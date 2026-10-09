@@ -1,115 +1,200 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>הדף שלי</title>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&display=swap" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ממשק חייל - יודה נוכחות</title>
 <style>
-:root{--bg:#f6f1e7;--card:#fffefa;--ink:#16263a;--mut:#6f7b88;--ok:#1e8a5a;--bad:#d9541e;--sun:#f5b82e;--sunbg:#fff3d1;--line:#e8dfcc}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1a28;--card:#172538;--ink:#f3efe4;--mut:#9aa8b8;--ok:#4cd694;--bad:#ff8a52;--sunbg:#3a3114;--line:#27384e}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);background-image:radial-gradient(circle at 12% 6%,rgba(245,184,46,.2),transparent 38%),radial-gradient(circle at 92% 0,rgba(30,138,90,.13),transparent 34%);color:var(--ink);font-family:Heebo,Arial,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:22px 14px calc(30px + env(safe-area-inset-bottom,0))}
-main{width:100%;max-width:480px}
+:root{--primary:#10b981;--bg:#0f172a;--card-bg:#1e293b;--text:#f8fafc;--text-muted:#94a3b8;--border:#334155;--accent:#3b82f6;--danger:#ef4444;--gold:#fbbf24}
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif}
+body{background:var(--bg);color:var(--text);padding:16px 16px calc(28px + env(safe-area-inset-bottom,0));max-width:600px;margin:0 auto;line-height:1.5}
 header{text-align:center;margin-bottom:16px}
-.logo{width:60px;height:60px;margin:0 auto 8px;border-radius:20px;background:var(--ink);color:var(--sun);display:grid;place-items:center;font-size:30px;transform:rotate(-6deg);box-shadow:0 6px 0 var(--sun)}
-h1{font-size:30px;font-weight:800;margin:10px 0 2px}h1 span{color:var(--ok)}
-.sub{color:var(--mut)}
-.card{background:var(--card);border:2px solid var(--line);border-radius:22px;padding:16px;margin-bottom:14px;box-shadow:0 7px 0 var(--line)}
-.card h2{margin:0 0 10px;font-size:19px}
-select,input,textarea{width:100%;font:inherit;font-size:17px;padding:12px;border-radius:13px;border:2px solid var(--line);background:var(--bg);color:var(--ink);margin:4px 0;outline:0}
-textarea{min-height:84px;resize:vertical}
-label{font-size:13px;color:var(--mut)}
-button{font:inherit;font-weight:800;cursor:pointer;border:0;border-radius:15px;padding:14px;font-size:17px;background:var(--ok);color:#fff;box-shadow:0 4px 0 rgba(0,0,0,.22)}
-button:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.22)}
-button.sec{background:var(--card);color:var(--ink);border:2px solid var(--line);box-shadow:none;padding:10px 14px;font-size:15px}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
-.grid button,.grid a{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;text-align:center;background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:18px;padding:14px 6px;font-weight:800;font-size:15px;box-shadow:0 5px 0 var(--line)}
-.grid .big{font-size:28px}.grid .main{background:var(--ok);color:#fff;border-color:var(--ok);box-shadow:0 5px 0 rgba(0,0,0,.2);grid-column:span 2;flex-direction:row;justify-content:center;font-size:18px;padding:16px}
-.row{display:flex;gap:8px}.row>*{flex:1}
-.ev{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px dashed var(--line)}.ev:last-child{border:0}
-.ev .t{font-weight:800;min-width:54px;color:var(--ok)}.ev.past{opacity:.45}.ev.now{background:var(--sunbg);border-radius:12px;padding:10px;margin:2px -6px;border:0}
-.ev .tag{margin-inline-start:auto;font-size:12px;background:var(--sun);color:#16263a;border-radius:99px;padding:2px 9px;font-weight:800}
-.empty{color:var(--mut);padding:6px 0}
-.bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--card);width:100%;max-width:480px;border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:92vh;overflow:auto}
-.sheet h2{margin:0 0 8px}
-.msg{color:var(--bad);min-height:20px;font-weight:600}
-#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:99px;opacity:0;transition:.25s;pointer-events:none;font-weight:600;z-index:30}
-#toast.on{opacity:1}
-.sent{font-size:14px;color:var(--mut);padding:6px 0;border-bottom:1px dashed var(--line)}.sent:last-child{border:0}
+h1{font-size:1.5rem;color:var(--primary);margin-bottom:10px}
+#who{width:100%;max-width:320px;padding:9px 12px;background:var(--card-bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:.95rem;outline:none}
+.hero{background:linear-gradient(160deg,#1e293b,#16213a);border:1px solid var(--border);border-top:3px solid var(--gold);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.hero-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.hero h2{font-size:1.15rem;color:var(--gold)}.hero .date{font-size:.85rem;color:var(--text-muted)}
+.ev{display:flex;align-items:baseline;gap:14px;padding:10px 4px;border-bottom:1px solid var(--border)}
+.ev:last-child{border-bottom:none}
+.ev .t{font-weight:800;color:var(--primary);min-width:52px;font-variant-numeric:tabular-nums}
+.ev .x{font-size:.98rem}
+.ev.past{opacity:.4}
+.ev.now{background:rgba(251,191,36,.12);border-radius:10px;border:1px solid rgba(251,191,36,.45);padding:10px 8px;margin:4px 0}
+.tag{margin-inline-start:auto;font-size:.72rem;font-weight:800;padding:2px 9px;border-radius:99px;background:var(--gold);color:#1e293b;white-space:nowrap}
+.tag.next{background:var(--border);color:var(--text)}
+.empty{color:var(--text-muted);text-align:center;padding:16px}
+.btn-attendance{display:block;width:100%;background:#059669;color:#fff;text-decoration:none;text-align:center;padding:14px;border-radius:12px;font-weight:bold;font-size:1.1rem;box-shadow:0 4px 12px rgba(16,185,129,.3);margin-bottom:18px}
+.btn-attendance:active{background:#047857}
+.nav-tabs{display:flex;gap:8px;margin-bottom:14px}
+.tab-btn{flex:1;padding:11px 6px;background:var(--card-bg);border:1px solid var(--border);color:var(--text-muted);border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer;text-align:center}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab-content{display:none;background:var(--card-bg);padding:16px;border-radius:12px;border:1px solid var(--border)}
+.tab-content.active{display:block}
+.tab-content h2{font-size:1.1rem;margin-bottom:12px;color:var(--accent)}
+.form-group{margin-bottom:14px}
+label{display:block;font-size:.85rem;color:var(--text-muted);margin-bottom:4px;font-weight:500}
+input[type=text],input[type=date],input[type=datetime-local],select,textarea{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.95rem;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:70px}
+.btn-submit{width:100%;background:var(--accent);color:#fff;border:none;padding:12px;border-radius:8px;font-size:1rem;font-weight:bold;cursor:pointer;margin-top:8px}
+.btn-submit:active{opacity:.9}.btn-submit:disabled{opacity:.6}
+.alert{padding:10px 14px;border-radius:8px;font-size:.9rem;margin-bottom:12px;display:none}
+.alert-success{background:rgba(16,185,129,.2);color:#10b981;border:1px solid #10b981}
+.alert-error{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid var(--danger)}
+.sent{margin-top:18px;font-size:.85rem;color:var(--text-muted)}
+.sent div{padding:6px 0;border-bottom:1px solid var(--border)}
+.need{background:rgba(59,130,246,.12);border:1px solid var(--accent);border-radius:10px;padding:12px;margin-bottom:14px;text-align:center;color:var(--text)}
 </style>
 </head>
-<body><main id="app"></main><div id="sheet"></div><div id="toast"></div>
+<body>
+<header>
+  <h1>ממשק חייל</h1>
+  <select id="who"><option value="">מי אתה? בחר שם…</option></select>
+</header>
+
+<section class="hero">
+  <div class="hero-head"><h2>📅 הלו״ז להיום</h2><span class="date" id="sdate"></span></div>
+  <div id="schedule-container"><p class="empty">טוען לו״ז…</p></div>
+</section>
+
+<a href="/" class="btn-attendance">📌 למעבר ליודה נוכחות</a>
+
+<div id="need" class="need" style="display:none">כדי לשלוח בקשה בחר קודם את השם שלך למעלה 👆</div>
+<div id="alert-msg" class="alert"></div>
+
+<div class="nav-tabs">
+  <button class="tab-btn active" data-tab="tab-leave">🚪 בקשת יציאה</button>
+  <button class="tab-btn" data-tab="tab-medical">🏥 רפואה</button>
+  <button class="tab-btn" data-tab="tab-general">💬 פנייה כללית</button>
+</div>
+
+<div id="tab-leave" class="tab-content active">
+  <h2>הגשת בקשת יציאה</h2>
+  <form id="form-leave">
+    <div class="form-group"><label>מה הבקשה</label><input type="text" id="leave-request" required placeholder="סיבת היציאה / סוג הבקשה"></div>
+    <div class="form-group"><label>מיקום</label><input type="text" id="leave-location" placeholder="לאן נוסע / מיקום"></div>
+    <div class="form-group"><label>תאריך ושעת יציאה מהבסיס</label><input type="datetime-local" id="leave-out-time" required></div>
+    <div class="form-group"><label>תאריך ושעת חזרה לבסיס</label><input type="datetime-local" id="leave-in-time" required></div>
+    <div class="form-group"><label>איזה תכנים אני מפסיד</label><textarea id="leave-missed" placeholder="שיעורים, משימות, שמירות וכדומה"></textarea></div>
+    <div class="form-group"><label>איך אני משלים את התכנים</label><textarea id="leave-completion" placeholder="השלמה מול חבר, השלמת שמירה וכו'"></textarea></div>
+    <div class="form-group"><label>תיאור כללי והחשיבות של הבקשה</label><textarea id="leave-importance" placeholder="פרט על חשיבות היציאה"></textarea></div>
+    <button type="submit" class="btn-submit">שלח בקשת יציאה</button>
+  </form>
+</div>
+
+<div id="tab-medical" class="tab-content">
+  <h2>רפואה (תורים, הפניות, פטורים ועדכונים)</h2>
+  <form id="form-medical">
+    <div class="form-group"><label>סוג העדכון / הבקשה</label>
+      <select id="med-type">
+        <option value="תור עתידי">תור עתידי</option>
+        <option value="תוצאות בדיקה / הפניה">תוצאות בדיקה / הפניה</option>
+        <option value="עדכון סטטוס / פטור">עדכון סטטוס / פטור חדש או קיים</option>
+        <option value="בקשה לבדיקת רופא">בקשה לבדיקת רופא / חופ״ל</option>
+        <option value="אחר">אחר</option>
+      </select></div>
+    <div class="form-group" id="med-appt-g"><label>תאריך ושעת התור</label><input type="datetime-local" id="med-appt"></div>
+    <div class="form-group" id="med-until-g" style="display:none"><label>הפטור / הסטטוס תקף עד (לא חובה)</label><input type="date" id="med-until"></div>
+    <div class="form-group"><label id="med-details-l">פירוט / סטטוס רפואי</label><textarea id="med-details" required placeholder="פרט כאן את תוצאות הבדיקה, הסטטוס הרפואי או מהות הפנייה…"></textarea></div>
+    <button type="submit" class="btn-submit">שלח עדכון רפואי</button>
+  </form>
+</div>
+
+<div id="tab-general" class="tab-content">
+  <h2>פנייה כללית למפקד</h2>
+  <form id="form-general">
+    <div class="form-group"><label>נושא הפנייה</label><input type="text" id="gen-subject" required placeholder="נושא קצר"></div>
+    <div class="form-group"><label>תוכן הפנייה</label><textarea id="gen-details" required placeholder="רשום כאן את הפירוט המלא…"></textarea></div>
+    <button type="submit" class="btn-submit">שלח פנייה</button>
+  </form>
+</div>
+
+<div class="sent" id="sent"></div>
+
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
-const $=id=>document.getElementById(id), app=$("app");
+const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
 const nowIL=()=>new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
 const todayIL=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
-const dstr=d=>new Date(d+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
+const dshort=d=>new Date(d+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
+const dlong=d=>new Date(d+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"long"});
+const dt=v=>v?`${dshort(v.slice(0,10))} ${v.slice(11,16)}`:"";
 let info={date:todayIL(),squad:[],items:[]}, name=ls.get("snm")||"";
-const toast=m=>{$("toast").textContent=m;$("toast").classList.add("on");setTimeout(()=>$("toast").classList.remove("on"),2200)};
 
+function switchTab(id){
+  document.querySelectorAll(".tab-btn").forEach(b=>b.classList.toggle("active",b.dataset.tab===id));
+  document.querySelectorAll(".tab-content").forEach(c=>c.classList.toggle("active",c.id===id));
+}
+document.querySelectorAll(".tab-btn").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+
+function showAlert(msg,ok=true){
+  const a=$("alert-msg"); a.textContent=msg; a.className="alert "+(ok?"alert-success":"alert-error"); a.style.display="block";
+  a.scrollIntoView?.({behavior:"smooth",block:"center"}); setTimeout(()=>{a.style.display="none"},4500);
+}
+function fillNames(){
+  const list=info.squad.length?info.squad:ROSTER, sel=$("who");
+  sel.innerHTML='<option value="">מי אתה? בחר שם…</option>'+list.map(n=>`<option ${n===name?"selected":""}>${esc(n)}</option>`).join("");
+  if(name&&!list.includes(name)){ name=""; ls.set("snm",""); }
+  $("need").style.display=name?"none":"block";
+}
+$("who").onchange=e=>{ name=e.target.value; ls.set("snm",name); $("need").style.display=name?"none":"block"; renderSent(); };
+
+function renderSchedule(){
+  $("sdate").textContent=dlong(info.date);
+  const ev=[...info.items].sort((a,b)=>a.t.localeCompare(b.t)), now=nowIL(); let cur=-1; ev.forEach((e,i)=>{ if(e.t<=now) cur=i; });
+  $("schedule-container").innerHTML=ev.length?ev.map((e,i)=>`<div class="ev ${i<cur?"past":""} ${i===cur?"now":""}"><span class="t">${esc(e.t)}</span><span class="x">${esc(e.x)}</span>${i===cur?'<span class="tag">עכשיו</span>':i===cur+1?'<span class="tag next">הבא</span>':""}</div>`).join(""):'<p class="empty">עדיין לא הוזן לו״ז להיום</p>';
+}
 async function load(){
   try{ const r=await fetch("/api/soldier"); if(r.ok) info=await r.json(); }catch(e){}
-  render();
-}
-const names=()=>info.squad.length?info.squad:ROSTER;
-function head(sub){ return `<header><div class="logo">🪖</div><h1>הדף <span>שלי</span></h1><div class="sub">${sub}</div></header>`; }
-function render(){
-  if(!name||!names().includes(name)){
-    app.innerHTML=head("בוא נכיר")+`<div class="card"><h2>מי אתה?</h2><select id="pick"><option value="">בחר שם…</option>${names().map(n=>`<option>${esc(n)}</option>`).join("")}</select><button id="go" style="width:100%;margin-top:8px">המשך</button><div class="msg" id="m"></div></div>`;
-    $("go").onclick=()=>{ const v=$("pick").value; if(!v) return $("m").textContent="בחר את השם שלך"; name=v; ls.set("snm",v); render(); };
-    return;
-  }
-  const now=nowIL(), ev=[...info.items].sort((a,b)=>a.t.localeCompare(b.t));
-  let cur=-1; ev.forEach((e,i)=>{ if(e.t<=now) cur=i; });
-  const sent=JSON.parse(ls.get("sent")||"[]").filter(s=>s.n===name).slice(0,4);
-  app.innerHTML=head(`שלום, ${esc(name)} · <a href="#" id="chg" style="color:var(--mut)">זה לא אני</a>`)+`
-  <div class="grid">
-    <a class="main" href="/"><span class="big">✋</span> דיווח נוכחות</a>
-    <button data-k="exit"><span class="big">🚪</span>בקשת יציאה</button>
-    <button data-k="medical"><span class="big">🩺</span>בקשה רפואית</button>
-    <button data-k="medstatus" style="grid-column:span 2;flex-direction:row;justify-content:center"><span class="big">📝</span>עדכון סטטוס רפואי</button>
-  </div>
-  <div class="card"><h2>📅 הלו״ז להיום · ${dstr(info.date)}</h2>${ev.length?ev.map((e,i)=>`<div class="ev ${i<cur?"past":""} ${i===cur?"now":""}"><span class="t">${esc(e.t)}</span><span>${esc(e.x)}</span>${i===cur?'<span class="tag">עכשיו</span>':(i===cur+1?'<span class="tag" style="background:var(--line);color:var(--ink)">הבא</span>':"")}</div>`).join(""):'<div class="empty">עדיין לא הוזן לו״ז להיום.</div>'}</div>
-  ${sent.length?`<div class="card"><h2>נשלח לאחרונה</h2>${sent.map(s=>`<div class="sent">${esc(s.w)} · ${esc(s.l)}</div>`).join("")}</div>`:""}`;
-  $("chg").onclick=e=>{e.preventDefault();ls.set("snm","");name="";render()};
-  app.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>openForm(b.dataset.k));
+  fillNames(); renderSchedule();
 }
 
-const FORMS={
-  exit:{title:"🚪 בקשת יציאה",label:"בקשת יציאה",body:()=>`<label>תאריך</label><input id="f_d" type="date" value="${todayIL()}">
-    <div class="row"><div><label>משעה</label><input id="f_a" type="time"></div><div><label>עד שעה (לא חובה)</label><input id="f_b" type="time"></div></div>
-    <label>סיבה</label><textarea id="f_r" placeholder="למה אתה צריך לצאת?"></textarea>`,
-    build:()=>{ const d=$("f_d").value, a=$("f_a").value, b=$("f_b").value, r=$("f_r").value.trim(); if(!d||!r) return null;
-      return {text:`יציאה ב-${dstr(d)}${a?` משעה ${a}`:""}${b?` עד ${b}`:""}. סיבה: ${r}`}; }},
-  medical:{title:"🩺 בקשה רפואית",label:"בקשה רפואית",body:()=>`<label>מה הבעיה / מה אתה צריך?</label><textarea id="f_r" placeholder="למשל: כואבת לי הברך, צריך לראות רופא"></textarea>
-    <label>מתי נוח לך (לא חובה)</label><input id="f_w" placeholder="למשל: מחר בבוקר">`,
-    build:()=>{ const r=$("f_r").value.trim(), w=$("f_w").value.trim(); if(!r) return null; return {text:`${r}${w?` · מתי נוח: ${w}`:""}`}; }},
-  medstatus:{title:"📝 עדכון סטטוס רפואי",label:"עדכון סטטוס רפואי",body:()=>`<label>הסטטוס הרפואי שלך כרגע</label><input id="f_r" placeholder="למשל: פטור מריצה / ללא מגבלות" value="${esc(ls.get("lastmed")||"")}">
-    <label>עד מתי (לא חובה)</label><input id="f_u" type="date">`,
-    build:()=>{ const r=$("f_r").value.trim(); if(!r) return null; ls.set("lastmed",r); return {text:r,until:$("f_u").value}; }}
-};
-function openForm(k){
-  const F=FORMS[k];
-  $("sheet").innerHTML=`<div class="bg" id="bg"><div class="sheet"><h2>${F.title}</h2>${F.body()}<div class="msg" id="fm"></div>
-    <div class="row" style="margin-top:8px"><button id="send">שלח למפקד</button><button class="sec" id="cancel" style="flex:0 0 90px">ביטול</button></div></div></div>`;
-  const close=()=>{$("sheet").innerHTML=""};
-  $("cancel").onclick=close; $("bg").onclick=e=>{ if(e.target.id==="bg") close(); };
-  $("send").onclick=async()=>{
-    const v=F.build(); if(!v) return $("fm").textContent="נא למלא את השדות הנדרשים";
-    const btn=$("send"); btn.disabled=true; btn.textContent="שולח…";
-    try{
-      const r=await fetch("/api/soldier",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"submit",name,kind:k,text:v.text,until:v.until||""})});
-      if(!r.ok) throw new Error();
-      const arr=JSON.parse(ls.get("sent")||"[]"); arr.unshift({n:name,w:new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"}),l:F.label}); ls.set("sent",JSON.stringify(arr.slice(0,12)));
-      close(); toast("נשלח למפקד ✓"); render();
-    }catch(e){ $("fm").textContent="השליחה נכשלה, נסה שוב"; btn.disabled=false; btn.textContent="שלח למפקד"; }
-  };
+function renderSent(){
+  const arr=JSON.parse(ls.get("sent")||"[]").filter(s=>s.n===name).slice(0,4);
+  $("sent").innerHTML=arr.length?"<b>נשלח לאחרונה</b>"+arr.map(s=>`<div>${esc(s.w)} · ${esc(s.l)}</div>`).join(""):"";
 }
-load(); setInterval(()=>{ if(!document.hidden&&!$("sheet").innerHTML) load(); },120000);
+async function send(kind,text,extra,label,form){
+  if(!name){ $("need").style.display="block"; window.scrollTo?.({top:0,behavior:"smooth"}); return; }
+  const btn=form.querySelector(".btn-submit"), old=btn.textContent; btn.disabled=true; btn.textContent="שולח…";
+  try{
+    const r=await fetch("/api/soldier",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"submit",name,kind,text,...extra})});
+    if(!r.ok) throw new Error();
+    const arr=JSON.parse(ls.get("sent")||"[]"); arr.unshift({n:name,l:label,w:new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"})}); ls.set("sent",JSON.stringify(arr.slice(0,12)));
+    form.reset(); syncMed(); renderSent(); showAlert("הבקשה נשלחה בהצלחה למפקד!");
+  }catch(e){ showAlert("שגיאה בשליחת הבקשה, נסה שוב",false); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}
+const line=(l,v)=>v&&String(v).trim()?`${l}: ${String(v).trim()}`:"";
+
+$("form-leave").onsubmit=e=>{ e.preventDefault();
+  const g=id=>$(id).value, out=g("leave-out-time"), back=g("leave-in-time");
+  if(back&&out&&back<=out) return showAlert("שעת החזרה חייבת להיות אחרי שעת היציאה",false);
+  const text=[line("מה הבקשה",g("leave-request")),line("מיקום",g("leave-location")),line("יציאה מהבסיס",dt(out)),line("חזרה לבסיס",dt(back)),
+    line("תכנים שאני מפסיד",g("leave-missed")),line("איך אני משלים",g("leave-completion")),line("חשיבות הבקשה",g("leave-importance"))].filter(Boolean).join("\n");
+  send("exit",text,{},"בקשת יציאה",e.target); };
+
+function syncMed(){
+  const t=$("med-type").value;
+  $("med-appt-g").style.display=t==="תור עתידי"?"block":"none";
+  $("med-until-g").style.display=t==="עדכון סטטוס / פטור"?"block":"none";
+  $("med-details-l").textContent=t==="עדכון סטטוס / פטור"?"הסטטוס / הפטור (למשל: פטור מריצה, ללא מגבלות)":"פירוט / סטטוס רפואי";
+}
+$("med-type").onchange=syncMed; syncMed();
+$("form-medical").onsubmit=e=>{ e.preventDefault();
+  const t=$("med-type").value, det=$("med-details").value.trim();
+  if(t==="עדכון סטטוס / פטור") return send("medstatus",det,{until:$("med-until").value},"עדכון סטטוס רפואי",e.target);
+  const appt=t==="תור עתידי"?$("med-appt").value:"";
+  const text=[`[${t}]`,line("תאריך ושעה",dt(appt)),line("פירוט",det)].filter(Boolean).join("\n");
+  send("medical",text,{appt:appt?appt.slice(0,10):""},"רפואה: "+t,e.target); };
+
+$("form-general").onsubmit=e=>{ e.preventDefault();
+  const text=[`[${$("gen-subject").value.trim()}]`,$("gen-details").value.trim()].join("\n");
+  send("general",text,{},"פנייה כללית",e.target); };
+
+load(); renderSent();
+setInterval(()=>{ if(!document.hidden) load(); },120000);
 </script>
-</body></html>
+</body>
+</html>

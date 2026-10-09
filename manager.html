@@ -67,6 +67,7 @@ const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפוא�
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null;
 const PRI=["🔴 דחוף","🟡 רגיל","⚪ נמוך"];
 const $=id=>document.getElementById(id), app=$("app");
+const nl=s=>esc(s).replace(/\n/g,"<br>");
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const uid=()=>Math.random().toString(36).slice(2,9);
 const todayStr=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
@@ -154,7 +155,7 @@ function today(){
   <div class="stats"><div class="stat bad"><b>${ol.length}</b>פניות פתוחות</div><div class="stat sun"><b>${nNew}</b>חדשות</div><div class="stat"><b>${urgent.length}</b>משימות דחופות</div></div>
   <div class="lnks"><a class="lnk" href="/#admin" target="_blank">📋 מעקב נוכחות</a><button class="sec" data-a="schedview">📅 לו״ז</button><button class="sec" data-a="cpsol">🔗 קישור לחיילים</button><button class="sec" data-a="refresh">🔄 רענן</button></div>
   <div class="card"><div class="chead"><h3>📨 פניות ובקשות פתוחות</h3><button class="sec" data-a="newlog">➕ פנייה חדשה</button></div>
-    ${ol.length?ol.map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(l.n)}" data-id="${l.id}"><div class="t"><b>${esc(l.n)}</b> <span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span>${l.src==="soldier"?'<span class="pill">מהחייל</span>':""}<br><small>${fmt(dayOfMs(l.t))}</small> ${esc(l.text)}</div></div>`).join(""):'<div class="empty">אין פניות פתוחות 🎉</div>'}
+    ${ol.length?ol.map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(l.n)}" data-id="${l.id}"><div class="t"><b>${esc(l.n)}</b> <span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span>${l.src==="soldier"?'<span class="pill">מהחייל</span>':""}<br><small>${fmt(dayOfMs(l.t))}</small> ${nl(l.text)}</div></div>`).join(""):'<div class="empty">אין פניות פתוחות 🎉</div>'}
     ${ol.length?'<button class="sec" data-a="cpopen" style="margin-top:8px">העתק רשימה לשליחה לרמ״מ</button>':""}</div>
   <div class="card"><h3>🔥 משימות דחופות</h3>${urgent.length?urgent.map(x=>`<div class="item"><input class="chk" type="checkbox" data-a="tdone" data-id="${x.id}"><div class="t" data-a="edittask" data-id="${x.id}" style="cursor:pointer">${x.pri===0?"🔴 ":""}${esc(x.text)}</div>${x.due?when(x.due):""}</div>`).join(""):'<div class="empty">אין משימות דחופות</div>'}</div>
   <div class="card"><div class="chead"><h3>📅 הלו״ז להיום</h3><button class="sec" data-a="schedview">עריכה</button></div>${sch.length?sch.map(s=>`<div class="item"><div class="t"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div></div>`).join(""):'<div class="empty">לא הוזן לו״ז להיום. החיילים רואים אותו בדף שלהם.</div>'}</div>
@@ -187,7 +188,7 @@ function soldier(n){
     <div class="row"><div><label>תוקף עד</label><input type="date" data-f="expires" data-n="${esc(n)}" value="${esc(m.expires)}"></div><div><label>תור/מעקב הבא</label><input type="date" data-f="next" data-n="${esc(n)}" value="${esc(m.next)}"></div></div></div>
   <div class="card"><h3>📝 הערות עליו</h3><textarea data-f="notes" data-n="${esc(n)}" placeholder="כל מה שחשוב לזכור">${esc(s.notes)}</textarea></div>
   <div class="card"><h3>➕ פנייה חדשה</h3><select id="lt">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select><textarea id="lx" placeholder="מה הוא ביקש / טען / מה קרה"></textarea><button data-a="addlog" data-n="${esc(n)}" style="width:100%">הוסף ליומן</button></div>
-  <div class="card"><h3>יומן <span class="hint">(לחץ על רישום כדי לערוך)</span></h3>${s.log.length?[...s.log].reverse().map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(n)}" data-id="${l.id}"><div class="t"><span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span> <small>${fmt(new Date(l.t).toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}))}</small><br>${esc(l.text)}</div></div>`).join(""):'<div class="empty">אין עדיין רישומים</div>'}</div>`;
+  <div class="card"><h3>יומן <span class="hint">(לחץ על רישום כדי לערוך)</span></h3>${s.log.length?[...s.log].reverse().map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(n)}" data-id="${l.id}"><div class="t"><span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span> <small>${fmt(new Date(l.t).toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}))}</small><br>${nl(l.text)}</div></div>`).join(""):'<div class="empty">אין עדיין רישומים</div>'}</div>`;
 }
 function orders(){
   const L=[...S.orders].sort((a,b)=>(a.st==="בוצעה")-(b.st==="בוצעה")||(a.due||"9").localeCompare(b.due||"9"));
@@ -235,8 +236,8 @@ function buildSummary(){
     }));
     rows.sort((a,b)=>a.n.localeCompare(b.n,"he")||a.l.t-b.l.t);
     tables.push({heading:SUM.type||"פניות ובקשות",cols:[{h:"חייל",w:2.2},{h:"סוג",w:1.8},{h:"תאריך",w:1.3},{h:"סטטוס",w:1.8},{h:"פירוט",w:6}],
-      rows:rows.map(({n,l})=>[n,l.type,fmt(dayOfMs(l.t)),l.st,l.text])});
-    rows.forEach(({n,l})=>prev.push(`<b>${esc(n)}</b> · ${esc(l.type)} · <span class="pill ${stCls(l.st)}">${esc(l.st)}</span><br><small>${fmt(dayOfMs(l.t))}</small> ${esc(l.text)}`));
+      rows:rows.map(({n,l})=>[n,l.type,fmt(dayOfMs(l.t)),l.st,String(l.text).replace(/\s*\n\s*/g," | ")])});
+    rows.forEach(({n,l})=>prev.push(`<b>${esc(n)}</b> · ${esc(l.type)} · <span class="pill ${stCls(l.st)}">${esc(l.st)}</span><br><small>${fmt(dayOfMs(l.t))}</small> ${nl(l.text)}`));
     if(SUM.type==="רפואי"){
       const med=S.squad.filter(n=>(!SUM.soldier||n===SUM.soldier)&&(sd(n).med.status||sd(n).med.expires||sd(n).med.next));
       tables.push({heading:"סטטוס רפואי כללי",cols:[{h:"חייל",w:2.2},{h:"סטטוס",w:5},{h:"תוקף עד",w:2},{h:"תור/מעקב הבא",w:2}],
@@ -287,8 +288,8 @@ async function pullInbox(){
     items.forEach(it=>{
       let n=S.squad.find(s=>normN(s)===normN(it.name)); if(!n){ n=it.name; S.squad.push(n); }
       const s=sd(n); if(s.log.some(l=>l.sid===it.id)) return;
-      let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":"רפואי";
-      if(it.kind==="medstatus"){ s.med.status=it.text; if(it.until) s.med.expires=it.until; text=`עדכון סטטוס רפואי: ${it.text}${it.until?" עד "+fmtY(it.until):""}`; }
+      let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":it.kind==="general"?"פנייה":"רפואי"; if(it.appt) s.med.next=it.appt;
+      if(it.kind==="medstatus"){ s.med.status=it.text; if(it.until) s.med.expires=it.until; text=`עדכון פטור/סטטוס רפואי: ${it.text}${it.until?" (בתוקף עד "+fmtY(it.until)+")":""}`; }
       s.log.push({id:uid(),sid:it.id,t:it.t,type,text,st:"חדש",src:"soldier"}); added++;
     });
     await api(S);   // save first, only then remove from the inbox
@@ -317,7 +318,7 @@ const A={
   setpri:d=>{SH.pri=+d.i; document.querySelectorAll(".pbtn").forEach((b,i)=>b.classList.toggle("on",i===+d.i))},
   shclose:()=>closeSheet(),
   shsave:()=>{shSave();closeSheet();go()},
-  shcopy:()=>{const l=sd(SH.n).log.find(x=>x.id===SH.id); copy(`${SH.n} · ${l.type}: ${l.text}`)},
+  shcopy:()=>{const l=sd(SH.n).log.find(x=>x.id===SH.id); copy(l.text.includes("*שם:*")?l.text:`${SH.n} · ${l.type}: ${l.text}`)},
   shdel:()=>{ if(!confirm("למחוק?")) return;
     if(SH.kind==="task") S.tasks=S.tasks.filter(x=>x.id!==SH.id);
     else if(SH.kind==="order") S.orders=S.orders.filter(x=>x.id!==SH.id);
