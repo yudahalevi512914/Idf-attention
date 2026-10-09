@@ -4,7 +4,7 @@ const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).f
 const PUB = "soldier/public/", IN = "soldier/inbox/";
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
-const KINDS = ["exit", "medical", "medstatus"];
+const KINDS = ["exit", "medical", "medstatus", "general"];
 
 async function putAny(path, body) {
   const o = { token, addRandomSuffix: false, allowOverwrite: true, contentType: "application/json" };
@@ -16,13 +16,14 @@ export default async function handler(req, res) {
   try {
     if (req.method === "POST") {
       const b = req.body || {};
-      const name = norm(b.name), kind = b.kind, text = String(b.text || "").trim().slice(0, 600);
+      const name = norm(b.name), kind = b.kind, text = String(b.text || "").trim().slice(0, 3000);
       if (b.action !== "submit" || name.length < 2 || name.length > 60 || !KINDS.includes(kind) || !text) return res.status(400).json({ error: "bad request" });
-      const until = /^\d{4}-\d{2}-\d{2}$/.test(b.until || "") ? b.until : "";
+      const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
+      const until = okDate(b.until) ? b.until : "", appt = okDate(b.appt) ? b.appt : "";
       const pending = await list({ prefix: IN, limit: 500, token });
       if (pending.blobs.length >= 500) return res.status(429).json({ error: "inbox full" });
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await putAny(`${IN}${id}.json`, JSON.stringify({ id, t: Date.now(), name, kind, text, until }));
+      await putAny(`${IN}${id}.json`, JSON.stringify({ id, t: Date.now(), name, kind, text, until, appt }));
       return res.json({ ok: true });
     }
     const date = today();
