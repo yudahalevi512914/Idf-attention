@@ -4,11 +4,22 @@ import PDFDocument from "pdfkit";
 const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
 const PIN = process.env.MANAGER_PIN || process.env.ADMIN_PIN || "1234";
 const P = "manager/data/";
+const FINAL = "manager/final/";
+const KEEP_DAYS = 7;
 
-async function putAny(path, body) {
-  const o = { token, addRandomSuffix: false, allowOverwrite: true, contentType: "application/json" };
+async function putAny(path, body, contentType = "application/json") {
+  const o = { token, addRandomSuffix: false, allowOverwrite: true, contentType };
   try { return await put(path, body, { ...o, access: "public" }); }
   catch (e) { if (!/private/i.test(String(e?.message))) throw e; return put(path, body, { ...o, access: "private" }); }
+}
+
+async function listAll(prefix) {
+  const out = []; let cursor;
+  do {
+    const r = await list({ prefix, limit: 1000, cursor, token });
+    out.push(...r.blobs); cursor = r.hasMore ? r.cursor : undefined;
+  } while (cursor);
+  return out;
 }
 
 const FONT = "https://raw.githubusercontent.com/google/fonts/main/ofl/alef/Alef-Regular.ttf";
@@ -23,7 +34,7 @@ async function getFonts() {
 const s = (v, n) => String(v ?? "").slice(0, n);
 
 // doc = { title, sub, tables: [{ heading, cols: [{h, w}], rows: [[cell,...]] }] }
-async function tablePdf(input) {
+export async function tablePdf(input) {
   const [reg, bold] = await getFonts();
   const tables = (Array.isArray(input?.tables) ? input.tables : []).slice(0, 20).map(t => ({
     heading: s(t.heading, 100),
@@ -112,8 +123,106 @@ async function tablePdf(input) {
   return done;
 }
 
+// ---------- daily commander report ----------
+const WAIT = "ממתין לתשובה מרמ״מ";
+const CLOSED_ST = ["נסגר", "בוצעה", "סגור", "טופל", "הושלם"];
+const isOpenSt = st => !CLOSED_ST.includes(String(st ?? "").trim());
+const dayOfMs = t => new Date(t).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+const todayIL = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+const shiftDay = (d, n) => new Date(new Date(d + "T12:00:00Z").getTime() + n * 864e5).toLocaleDateString("en-CA");
+const dayLabel = d => new Date(d + "T09:00:00Z").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jerusalem" });
+const hhmm = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
+const dmy = d => (d ? new Date(d + "T12:00:00Z").toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "numeric" }) : "");
+const plur = (n, one, many) => (n === 1 ? one : `${n} ${many}`);
+const oneLine = t => String(t ?? "").replace(/\s*\n\s*/g, " | ");
+
+// Builds the PDF document description for one day: the day's safety / discipline /
+// readiness events, the requests opened that day, and anything still waiting on the RMM.
+export function buildDailyDoc(data, date) {
+  const S = data || {};
+  const squad = Array.isArray(S.squad) ? S.squad : [];
+  const soldiers = S.soldiers || {};
+
+  const events = (Array.isArray(S.events) ? S.events : [])
+    .filter(e => dayOfMs(e.t) === date).sort((a, b) => a.t - b.t);
+
+  const todayLogs = [], waiting = [];
+  squad.forEach(n => ((soldiers[n] || {}).log || []).forEach(l => {
+    const row = { n, l };
+    if (dayOfMs(l.t) === date) todayLogs.push(row);
+    else if (String(l.st || "").trim() === WAIT) waiting.push(row);
+  }));
+  const byTime = (a, b) => a.l.t - b.l.t;
+  todayLogs.sort(byTime); waiting.sort(byTime);
+
+  const logCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6 }];
+  const logRow = ({ n, l }) => [n, l.type || "", hhmm(l.t), l.st || "", oneLine(l.text)];
+  const waitCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "נפתח", w: 1.6 }, { h: "פירוט", w: 6 }];
+
+  const tables = [
+    {
+      heading: "אירועי בטיחות, משמעת ופערי כוננות",
+      cols: [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "פירוט", w: 6 }],
+      rows: events.map(e => [e.n || "", e.kind || "", hhmm(e.t), oneLine(e.text)]),
+    },
+    { heading: "פניות ובקשות שנפתחו היום", cols: logCols, rows: todayLogs.map(logRow) },
+    {
+      heading: "ממתינות להחלטת רמ״מ מימים קודמים",
+      cols: waitCols,
+      rows: waiting.map(({ n, l }) => [n, l.type || "", dmy(dayOfMs(l.t)), oneLine(l.text)]),
+    },
+  ];
+
+  const open = squad.reduce((a, n) => a + ((soldiers[n] || {}).log || []).filter(l => isOpenSt(l.st)).length, 0);
+  return {
+    title: "דוח יומי – לוח מפקד",
+    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(todayLogs.length, "פנייה חדשה אחת", "פניות חדשות")} · ${plur(waiting.length, "אחת ממתינה לרמ״מ", "ממתינות לרמ״מ")} · ${open} פתוחות בסך הכל`,
+    tables,
+  };
+}
+
+async function readState() {
+  const blobs = (await listAll(P)).sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
+  if (!blobs.length) return { data: null, blobs };
+  const data = await fetch(blobs[0].url).then(r => r.json()).catch(() => null);
+  return { data, blobs };
+}
+
+// Every day that has ended gets one stored PDF (kept KEEP_DAYS days); its events are
+// then dropped from the live state so the commander board only ever shows today.
+async function finalizeManagerDays() {
+  const { data, blobs } = await readState();
+  if (!data) return { days: [] };
+  const today = todayIL();
+  const eventDays = [...new Set((Array.isArray(data.events) ? data.events : []).map(e => dayOfMs(e.t)))];
+  const days = [...new Set([shiftDay(today, -1), ...eventDays])].filter(d => d < today).sort();
+
+  for (const d of days) {
+    const pdf = await tablePdf(buildDailyDoc(data, d));
+    await putAny(`${FINAL}${d}.pdf`, pdf, "application/pdf");
+  }
+
+  const kept = (Array.isArray(data.events) ? data.events : []).filter(e => dayOfMs(e.t) >= today);
+  if (kept.length !== (data.events || []).length) {
+    data.events = kept;
+    await putAny(`${P}${Date.now()}.json`, JSON.stringify(data));
+    if (blobs.length) await del(blobs.map(b => b.url), { token });
+  }
+
+  const keepFrom = shiftDay(today, -(KEEP_DAYS - 1));
+  const old = (await listAll(FINAL)).filter(b => b.pathname.slice(FINAL.length, FINAL.length + 10) < keepFrom);
+  if (old.length) await del(old.map(b => b.url), { token });
+  return { days };
+}
+
 export default async function handler(req, res) {
   try {
+    if (req.query.cron !== undefined) {
+      const sec = process.env.CRON_SECRET;
+      if (sec && req.headers.authorization !== `Bearer ${sec}`) return res.status(401).json({ error: "unauthorized" });
+      const r = await finalizeManagerDays();
+      return res.json({ ok: true, ...r });
+    }
     const pin = req.method === "POST" ? req.body?.pin : req.query.pin;
     if (pin !== PIN) return res.status(401).json({ error: "unauthorized" });
     if (req.method === "POST" && req.body?.action === "pdf") {
@@ -121,6 +230,28 @@ export default async function handler(req, res) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", 'attachment; filename="summary.pdf"');
       return res.end(pdf);
+    }
+    // on-demand daily report, built from the stored state so it never lags the client
+    if (req.method === "POST" && req.body?.action === "daily") {
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || "") ? req.body.date : todayIL();
+      const { data } = await readState();
+      const pdf = await tablePdf(buildDailyDoc(data, date));
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="daily-${date}.pdf"`);
+      return res.end(pdf);
+    }
+    if (req.method === "GET" && (req.query.finals !== undefined || req.query.final !== undefined)) {
+      await finalizeManagerDays();
+      const all = (await listAll(FINAL))
+        .map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), url: b.url }))
+        .sort((a, c) => (a.date < c.date ? 1 : -1));
+      if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: dayLabel(x.date) })) });
+      const f = all.find(x => x.date === req.query.final);
+      if (!f) return res.status(404).json({ error: "not found" });
+      const buf = Buffer.from(await (await fetch(f.url)).arrayBuffer());
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="daily-${f.date}.pdf"`);
+      return res.end(buf);
     }
     const IN = "soldier/inbox/", PUB = "soldier/public/";
     if (req.method === "GET" && req.query.inbox !== undefined) {
