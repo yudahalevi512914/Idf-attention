@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>הדף שלי</title>
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f6f1e7;--card:#fffefa;--ink:#16263a;--mut:#6f7b88;--ok:#1e8a5a;--bad:#d9541e;--sun:#f5b82e;--sunbg:#fff3d1;--line:#e8dfcc}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1a28;--card:#172538;--ink:#f3efe4;--mut:#9aa8b8;--ok:#4cd694;--bad:#ff8a52;--sunbg:#3a3114;--line:#27384e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);background-image:radial-gradient(circle at 12% 6%,rgba(245,184,46,.2),transparent 38%),radial-gradient(circle at 92% 0,rgba(30,138,90,.13),transparent 34%);color:var(--ink);font-family:Heebo,Arial,sans-serif;min-height:100vh;display:flex;justify-content:center;padding:22px 14px calc(30px + env(safe-area-inset-bottom,0))}
+main{width:100%;max-width:480px}
+header{text-align:center;margin-bottom:16px}
+.logo{width:60px;height:60px;margin:0 auto 8px;border-radius:20px;background:var(--ink);color:var(--sun);display:grid;place-items:center;font-size:30px;transform:rotate(-6deg);box-shadow:0 6px 0 var(--sun)}
+h1{font-size:30px;font-weight:800;margin:10px 0 2px}h1 span{color:var(--ok)}
+.sub{color:var(--mut)}
+.card{background:var(--card);border:2px solid var(--line);border-radius:22px;padding:16px;margin-bottom:14px;box-shadow:0 7px 0 var(--line)}
+.card h2{margin:0 0 10px;font-size:19px}
+select,input,textarea{width:100%;font:inherit;font-size:17px;padding:12px;border-radius:13px;border:2px solid var(--line);background:var(--bg);color:var(--ink);margin:4px 0;outline:0}
+textarea{min-height:84px;resize:vertical}
+label{font-size:13px;color:var(--mut)}
+button{font:inherit;font-weight:800;cursor:pointer;border:0;border-radius:15px;padding:14px;font-size:17px;background:var(--ok);color:#fff;box-shadow:0 4px 0 rgba(0,0,0,.22)}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 rgba(0,0,0,.22)}
+button.sec{background:var(--card);color:var(--ink);border:2px solid var(--line);box-shadow:none;padding:10px 14px;font-size:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.grid button,.grid a{display:flex;flex-direction:column;align-items:center;gap:4px;text-decoration:none;text-align:center;background:var(--card);color:var(--ink);border:2px solid var(--line);border-radius:18px;padding:14px 6px;font-weight:800;font-size:15px;box-shadow:0 5px 0 var(--line)}
+.grid .big{font-size:28px}.grid .main{background:var(--ok);color:#fff;border-color:var(--ok);box-shadow:0 5px 0 rgba(0,0,0,.2);grid-column:span 2;flex-direction:row;justify-content:center;font-size:18px;padding:16px}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.ev{display:flex;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px dashed var(--line)}.ev:last-child{border:0}
+.ev .t{font-weight:800;min-width:54px;color:var(--ok)}.ev.past{opacity:.45}.ev.now{background:var(--sunbg);border-radius:12px;padding:10px;margin:2px -6px;border:0}
+.ev .tag{margin-inline-start:auto;font-size:12px;background:var(--sun);color:#16263a;border-radius:99px;padding:2px 9px;font-weight:800}
+.empty{color:var(--mut);padding:6px 0}
+.bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--card);width:100%;max-width:480px;border-radius:24px 24px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom,0));max-height:92vh;overflow:auto}
+.sheet h2{margin:0 0 8px}
+.msg{color:var(--bad);min-height:20px;font-weight:600}
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:99px;opacity:0;transition:.25s;pointer-events:none;font-weight:600;z-index:30}
+#toast.on{opacity:1}
+.sent{font-size:14px;color:var(--mut);padding:6px 0;border-bottom:1px dashed var(--line)}.sent:last-child{border:0}
+</style>
+</head>
+<body><main id="app"></main><div id="sheet"></div><div id="toast"></div>
+<script>
+const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
+const $=id=>document.getElementById(id), app=$("app");
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ls={get:k=>{try{return localStorage.getItem(k)}catch(e){return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}}};
+const nowIL=()=>new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
+const todayIL=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
+const dstr=d=>new Date(d+"T12:00:00").toLocaleDateString("he-IL",{day:"numeric",month:"numeric"});
+let info={date:todayIL(),squad:[],items:[]}, name=ls.get("snm")||"";
+const toast=m=>{$("toast").textContent=m;$("toast").classList.add("on");setTimeout(()=>$("toast").classList.remove("on"),2200)};
+
+async function load(){
+  try{ const r=await fetch("/api/soldier"); if(r.ok) info=await r.json(); }catch(e){}
+  render();
+}
+const names=()=>info.squad.length?info.squad:ROSTER;
+function head(sub){ return `<header><div class="logo">🪖</div><h1>הדף <span>שלי</span></h1><div class="sub">${sub}</div></header>`; }
+function render(){
+  if(!name||!names().includes(name)){
+    app.innerHTML=head("בוא נכיר")+`<div class="card"><h2>מי אתה?</h2><select id="pick"><option value="">בחר שם…</option>${names().map(n=>`<option>${esc(n)}</option>`).join("")}</select><button id="go" style="width:100%;margin-top:8px">המשך</button><div class="msg" id="m"></div></div>`;
+    $("go").onclick=()=>{ const v=$("pick").value; if(!v) return $("m").textContent="בחר את השם שלך"; name=v; ls.set("snm",v); render(); };
+    return;
+  }
+  const now=nowIL(), ev=[...info.items].sort((a,b)=>a.t.localeCompare(b.t));
+  let cur=-1; ev.forEach((e,i)=>{ if(e.t<=now) cur=i; });
+  const sent=JSON.parse(ls.get("sent")||"[]").filter(s=>s.n===name).slice(0,4);
+  app.innerHTML=head(`שלום, ${esc(name)} · <a href="#" id="chg" style="color:var(--mut)">זה לא אני</a>`)+`
+  <div class="grid">
+    <a class="main" href="/"><span class="big">✋</span> דיווח נוכחות</a>
+    <button data-k="exit"><span class="big">🚪</span>בקשת יציאה</button>
+    <button data-k="medical"><span class="big">🩺</span>בקשה רפואית</button>
+    <button data-k="medstatus" style="grid-column:span 2;flex-direction:row;justify-content:center"><span class="big">📝</span>עדכון סטטוס רפואי</button>
+  </div>
+  <div class="card"><h2>📅 הלו״ז להיום · ${dstr(info.date)}</h2>${ev.length?ev.map((e,i)=>`<div class="ev ${i<cur?"past":""} ${i===cur?"now":""}"><span class="t">${esc(e.t)}</span><span>${esc(e.x)}</span>${i===cur?'<span class="tag">עכשיו</span>':(i===cur+1?'<span class="tag" style="background:var(--line);color:var(--ink)">הבא</span>':"")}</div>`).join(""):'<div class="empty">עדיין לא הוזן לו״ז להיום.</div>'}</div>
+  ${sent.length?`<div class="card"><h2>נשלח לאחרונה</h2>${sent.map(s=>`<div class="sent">${esc(s.w)} · ${esc(s.l)}</div>`).join("")}</div>`:""}`;
+  $("chg").onclick=e=>{e.preventDefault();ls.set("snm","");name="";render()};
+  app.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>openForm(b.dataset.k));
+}
+
+const FORMS={
+  exit:{title:"🚪 בקשת יציאה",label:"בקשת יציאה",body:()=>`<label>תאריך</label><input id="f_d" type="date" value="${todayIL()}">
+    <div class="row"><div><label>משעה</label><input id="f_a" type="time"></div><div><label>עד שעה (לא חובה)</label><input id="f_b" type="time"></div></div>
+    <label>סיבה</label><textarea id="f_r" placeholder="למה אתה צריך לצאת?"></textarea>`,
+    build:()=>{ const d=$("f_d").value, a=$("f_a").value, b=$("f_b").value, r=$("f_r").value.trim(); if(!d||!r) return null;
+      return {text:`יציאה ב-${dstr(d)}${a?` משעה ${a}`:""}${b?` עד ${b}`:""}. סיבה: ${r}`}; }},
+  medical:{title:"🩺 בקשה רפואית",label:"בקשה רפואית",body:()=>`<label>מה הבעיה / מה אתה צריך?</label><textarea id="f_r" placeholder="למשל: כואבת לי הברך, צריך לראות רופא"></textarea>
+    <label>מתי נוח לך (לא חובה)</label><input id="f_w" placeholder="למשל: מחר בבוקר">`,
+    build:()=>{ const r=$("f_r").value.trim(), w=$("f_w").value.trim(); if(!r) return null; return {text:`${r}${w?` · מתי נוח: ${w}`:""}`}; }},
+  medstatus:{title:"📝 עדכון סטטוס רפואי",label:"עדכון סטטוס רפואי",body:()=>`<label>הסטטוס הרפואי שלך כרגע</label><input id="f_r" placeholder="למשל: פטור מריצה / ללא מגבלות" value="${esc(ls.get("lastmed")||"")}">
+    <label>עד מתי (לא חובה)</label><input id="f_u" type="date">`,
+    build:()=>{ const r=$("f_r").value.trim(); if(!r) return null; ls.set("lastmed",r); return {text:r,until:$("f_u").value}; }}
+};
+function openForm(k){
+  const F=FORMS[k];
+  $("sheet").innerHTML=`<div class="bg" id="bg"><div class="sheet"><h2>${F.title}</h2>${F.body()}<div class="msg" id="fm"></div>
+    <div class="row" style="margin-top:8px"><button id="send">שלח למפקד</button><button class="sec" id="cancel" style="flex:0 0 90px">ביטול</button></div></div></div>`;
+  const close=()=>{$("sheet").innerHTML=""};
+  $("cancel").onclick=close; $("bg").onclick=e=>{ if(e.target.id==="bg") close(); };
+  $("send").onclick=async()=>{
+    const v=F.build(); if(!v) return $("fm").textContent="נא למלא את השדות הנדרשים";
+    const btn=$("send"); btn.disabled=true; btn.textContent="שולח…";
+    try{
+      const r=await fetch("/api/soldier",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"submit",name,kind:k,text:v.text,until:v.until||""})});
+      if(!r.ok) throw new Error();
+      const arr=JSON.parse(ls.get("sent")||"[]"); arr.unshift({n:name,w:new Date().toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"}),l:F.label}); ls.set("sent",JSON.stringify(arr.slice(0,12)));
+      close(); toast("נשלח למפקד ✓"); render();
+    }catch(e){ $("fm").textContent="השליחה נכשלה, נסה שוב"; btn.disabled=false; btn.textContent="שלח למפקד"; }
+  };
+}
+load(); setInterval(()=>{ if(!document.hidden&&!$("sheet").innerHTML) load(); },120000);
+</script>
+</body></html>

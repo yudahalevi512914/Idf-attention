@@ -38,6 +38,14 @@ nav button b{font-size:21px;font-weight:400}nav button.on{color:var(--ok)}
 #toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:99px;opacity:0;transition:.25s;pointer-events:none}
 #toast.on{opacity:1}
 .empty{color:var(--mut);padding:8px 0}
+.stats{display:flex;gap:10px;margin:12px 0}
+.stat{flex:1;text-align:center;padding:12px 6px;border-radius:16px;background:var(--card);border:2px solid var(--line);font-size:13px;color:var(--mut)}
+.stat b{display:block;font-size:30px;color:var(--ink);line-height:1.1}.stat.bad b{color:var(--bad)}.stat.sun{background:var(--sunbg)}
+.lnks{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:12px;font-size:14px;background:var(--card)}
+.pill.wait{background:#dbeafe;color:#1d4ed8}@media(prefers-color-scheme:dark){.pill.wait{background:#1e3a5f;color:#93c5fd}}
+.tm{display:inline-block;min-width:52px;font-weight:800;color:var(--ok)}
+.chead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.chead h3{margin:0}
 .item.tap .t{cursor:pointer}
 .task{border-inline-start:6px solid var(--line);padding-inline-start:8px;position:relative;background:var(--card)}
 .task.p0{border-color:var(--bad)}.task.p1{border-color:var(--sun)}
@@ -55,7 +63,7 @@ nav button b{font-size:21px;font-weight:400}nav button.on{color:var(--ok)}
 <nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
-const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","הועלה","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
+const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null;
 const PRI=["🔴 דחוף","🟡 רגיל","⚪ נמוך"];
 const $=id=>document.getElementById(id), app=$("app");
@@ -81,24 +89,32 @@ async function boot(){
   pin=lsGet("mpin")||"";
   for(;;){
     if(!pin){ pin=prompt("קוד כניסה:")||""; if(!pin){ app.innerHTML='<div class="card">נדרש קוד. רענן את הדף.</div>'; return; } }
-    try{ const r=await api(); S=Object.assign({squad:[],soldiers:{},orders:[],tasks:[]},r.data||{}); S.tasks.forEach(t=>{ if(t.pri===undefined) t.pri=t.hot?0:1; }); lsSet("mpin",pin); break; }
+    try{ const r=await api(); S=Object.assign({squad:[],soldiers:{},orders:[],tasks:[]},r.data||{}); S.tasks.forEach(t=>{ if(t.pri===undefined) t.pri=t.hot?0:1; }); S.schedule=S.schedule||{}; Object.values(S.soldiers).forEach(s=>s.log.forEach(l=>{ if(l.st==="הועלה") l.st="ממתין לתשובה מרמ״מ"; })); lsSet("mpin",pin); break; }
     catch(e){ if(e.message==="401"){ pin=""; lsSet("mpin",null); continue; } app.innerHTML='<div class="card">שגיאת שרת. נסה לרענן.</div>'; return; }
   }
   render();
+  pullInbox().then(n=>{ if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } else pub(); });
+  setInterval(async()=>{ if(document.hidden||tab!=="today"||SH) return; const n=await pullInbox(); if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } },60000);
 }
 
 function render(){
-  $("nav").innerHTML=[["today","📌","היום"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"],["sum","📊","סיכומים"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
+  $("nav").innerHTML=[["today","🎛️","בקרה"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"],["sum","📊","סיכומים"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
   if(!S.squad.length||editSquad) return app.innerHTML=squadPicker();
-  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tasks();
+  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tab==="sched"?schedule():tasks();
 }
-const stCls=s=>s==="חדש"||s==="חדשה"?"sun":["הועלה","נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
+const stCls=s=>s==="חדש"||s==="חדשה"?"sun":s==="ממתין לתשובה מרמ״מ"?"wait":["נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
 function renderSheet(){
   const box=$("sheet");
   if(!SH){ box.innerHTML=""; return; }
   let b="";
   const chips=l=>`<div class="chips">${l.map(s=>`<button class="sec" data-a="chip" data-v="${s}">${s}</button>`).join("")}</div>`;
-  if(SH.kind==="task"){
+  if(SH.kind==="newlog"){
+    b=`<h3>פנייה חדשה</h3><select id="e_n">${S.squad.map(n=>`<option ${n===SH.n?"selected":""}>${esc(n)}</option>`).join("")}</select>
+    <select id="e_type">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
+    <textarea id="e_text" placeholder="מה הפנייה / הבקשה"></textarea>
+    <label>סטטוס</label><input id="e_st" value="חדש">${chips(LST)}
+    <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button></div>`;
+  } else if(SH.kind==="task"){
     const t=S.tasks.find(x=>x.id===SH.id);
     b=`<h3>עריכת משימה</h3><textarea id="e_text">${esc(t.text)}</textarea>
     <label>תאריך יעד</label><input id="e_due" type="date" value="${esc(t.due||"")}">
@@ -126,22 +142,37 @@ const closeSheet=()=>{SH=null;renderSheet()};
 function squadPicker(){
   return `<div class="card"><h2>מי הכיתה שלך?</h2><p class="mut">סמן את החיילים שבאחריותך.</p>${ROSTER.map(n=>`<label class="item" style="font-size:17px;color:var(--ink)"><input class="chk" type="checkbox" data-sq="${esc(n)}" ${S.squad.includes(n)?"checked":""}><span class="t">${esc(n)}</span></label>`).join("")}<button data-a="sqsave" style="width:100%;margin-top:10px">שמור</button></div>`;
 }
-function openLog(){ const o=[]; S.squad.forEach(n=>sd(n).log.forEach(l=>{ if(l.st==="חדש") o.push({n,...l}); })); return o; }
+function openLog(){ const o=[]; S.squad.forEach(n=>sd(n).log.forEach(l=>{ if(isOpen(l.st)) o.push({n,...l}); })); return o.sort((a,b)=>(a.st==="חדש"?0:1)-(b.st==="חדש"?0:1)||a.t-b.t); }
 function today(){
-  const t=todayStr(), L=[];
-  const tk=S.tasks.filter(x=>!x.done&&x.due&&daysTo(x.due)<=0), od=S.orders.filter(x=>x.st!=="בוצעה"&&x.due&&daysTo(x.due)<=2);
+  const t=todayStr(), ol=openLog(), nNew=ol.filter(l=>l.st==="חדש").length;
+  const urgent=S.tasks.filter(x=>!x.done&&(x.pri===0||(x.due&&daysTo(x.due)<=0)));
+  const od=S.orders.filter(x=>x.st!=="בוצעה"&&x.due&&daysTo(x.due)<=2);
   const med=[]; S.squad.forEach(n=>{const m=sd(n).med; if(m.expires&&daysTo(m.expires)<=7) med.push([n,"תוקף רפואי",m.expires,m.status]); if(m.next&&daysTo(m.next)>=0&&daysTo(m.next)<=3) med.push([n,"תור/מעקב",m.next,""]);});
-  const ol=openLog(), newOrd=S.orders.filter(x=>x.st==="חדשה");
-  const sec=(title,body)=>body?`<div class="card"><h3>${title}</h3>${body}</div>`:"";
+  const sch=(S.schedule[t]||[]).slice().sort((a,b)=>a.t.localeCompare(b.t));
   const row=(txt,d)=>`<div class="item"><div class="t">${txt}</div>${d?when(d):""}</div>`;
-  const body=
-    sec("⏰ משימות להיום ובאיחור",tk.map(x=>row(esc(x.text),x.due)).join(""))+
-    sec("📢 הוראות שקרובות להגיע",od.map(x=>row(esc(x.text),x.due)).join(""))+
-    sec("🩺 רפואי: תוקף ותורים",med.map(([n,k,d,s])=>row(`<b>${esc(n)}</b> · ${k}${s?`<br><small>${esc(s)}</small>`:""}`,d)).join(""))+
-    sec(`📨 פניות שעוד לא הועלו (${ol.length})`,ol.map(l=>row(`<b>${esc(l.n)}</b> · ${esc(l.type)}<br><small>${esc(l.text)}</small>`)).join("")+`<button data-a="cpopen" class="sec" style="margin-top:8px">העתק להעלאה לדרג</button>`.replace(/^.*$/,ol.length?`<button data-a="cpopen" class="sec" style="margin-top:8px">העתק להעלאה לדרג וסמן כהועלו</button>`:""))+
-    sec(`📥 הוראות חדשות להעביר למטה (${newOrd.length})`,newOrd.map(x=>row(esc(x.text),x.due)).join(""));
-  return `<h2>היום שלי</h2>`+(body||`<div class="card empty">אין כרגע שום דבר דחוף 🎉</div>`)+`<button data-a="cprem" class="sec" style="width:100%">📲 הכן תזכורות לטלפון</button>`;
+  return `<h2>לוח בקרה</h2>
+  <div class="stats"><div class="stat bad"><b>${ol.length}</b>פניות פתוחות</div><div class="stat sun"><b>${nNew}</b>חדשות</div><div class="stat"><b>${urgent.length}</b>משימות דחופות</div></div>
+  <div class="lnks"><a class="lnk" href="/#admin" target="_blank">📋 מעקב נוכחות</a><button class="sec" data-a="schedview">📅 לו״ז</button><button class="sec" data-a="cpsol">🔗 קישור לחיילים</button><button class="sec" data-a="refresh">🔄 רענן</button></div>
+  <div class="card"><div class="chead"><h3>📨 פניות ובקשות פתוחות</h3><button class="sec" data-a="newlog">➕ פנייה חדשה</button></div>
+    ${ol.length?ol.map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(l.n)}" data-id="${l.id}"><div class="t"><b>${esc(l.n)}</b> <span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span>${l.src==="soldier"?'<span class="pill">מהחייל</span>':""}<br><small>${fmt(dayOfMs(l.t))}</small> ${esc(l.text)}</div></div>`).join(""):'<div class="empty">אין פניות פתוחות 🎉</div>'}
+    ${ol.length?'<button class="sec" data-a="cpopen" style="margin-top:8px">העתק רשימה לשליחה לרמ״מ</button>':""}</div>
+  <div class="card"><h3>🔥 משימות דחופות</h3>${urgent.length?urgent.map(x=>`<div class="item"><input class="chk" type="checkbox" data-a="tdone" data-id="${x.id}"><div class="t" data-a="edittask" data-id="${x.id}" style="cursor:pointer">${x.pri===0?"🔴 ":""}${esc(x.text)}</div>${x.due?when(x.due):""}</div>`).join(""):'<div class="empty">אין משימות דחופות</div>'}</div>
+  <div class="card"><div class="chead"><h3>📅 הלו״ז להיום</h3><button class="sec" data-a="schedview">עריכה</button></div>${sch.length?sch.map(s=>`<div class="item"><div class="t"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div></div>`).join(""):'<div class="empty">לא הוזן לו״ז להיום. החיילים רואים אותו בדף שלהם.</div>'}</div>
+  ${med.length?`<div class="card"><h3>🩺 רפואי ותורים קרובים</h3>${med.map(([n,k,d,s])=>row(`<b>${esc(n)}</b> · ${k}${s?`<br><small>${esc(s)}</small>`:""}`,d)).join("")}</div>`:""}
+  ${od.length?`<div class="card"><h3>📢 הוראות שמתקרבות</h3>${od.map(x=>row(esc(x.text),x.due)).join("")}</div>`:""}
+  <button data-a="cprem" class="sec" style="width:100%">📲 הכן תזכורות לטלפון</button>`;
 }
+// ---------- schedule editor ----------
+let SD=null;
+function schedule(){
+  const d=SD||todayStr(), L=(S.schedule[d]||[]).slice().sort((a,b)=>a.t.localeCompare(b.t));
+  return `<button class="sec" data-a="back2">→ חזרה ללוח הבקרה</button><h2 style="margin-top:10px">לו״ז</h2>
+  <div class="card"><div class="row"><button class="sec n" data-a="sdnext">›</button><input type="date" data-sd="1" value="${d}"><button class="sec n" data-a="sdprev">‹</button></div>
+    <button class="sec" data-a="sdcopy" style="width:100%;margin-top:8px">העתק מהיום הקודם</button></div>
+  <div class="card"><h3>הוספת פריט</h3><div class="row"><input id="s_x" placeholder="מה קורה"><input id="s_t" type="time" style="flex:0 0 120px"></div><button data-a="sadd" style="width:100%;margin-top:6px">הוסף</button></div>
+  <div class="card"><span class="hint">לחץ על פריט כדי לערוך את הטקסט. החיילים רואים את הלו״ז בדף שלהם.</span>${L.length?L.map(s=>`<div class="item"><div class="t" data-a="sedit" data-id="${s.id}" style="cursor:pointer"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div><button class="x" data-a="sdel" data-id="${s.id}">✕</button></div>`).join(""):'<div class="empty">אין פריטים ליום הזה</div>'}</div>`;
+}
+
 function soldiers(){
   return `<div class="row" style="margin-bottom:8px"><h2 style="flex:1;margin:0">הכיתה שלי</h2><button class="sec n" data-a="editsq">ערוך הרכב</button></div><div class="card">`+S.squad.map(n=>{
     const s=sd(n), open=s.log.filter(l=>l.st==="חדש").length, m=s.med, w=m.expires&&daysTo(m.expires)<=7;
@@ -242,6 +273,30 @@ function summaries(){
     <div class="row" style="margin-bottom:6px"><button data-a="sumpdf">📄 ייצא ל-PDF</button><button class="sec" data-a="sumcopy">העתק</button></div>
     ${b.prev.length?b.prev.map(p=>`<div class="item"><div class="t">${p}</div></div>`).join(""):'<div class="empty">אין פריטים שמתאימים לבחירה</div>'}</div>`;
 }
+const shiftDay=(d,n)=>new Date(new Date(d+"T12:00:00").getTime()+n*864e5).toLocaleDateString("en-CA");
+let pubTimer;
+function pub(){ clearTimeout(pubTimer); pubTimer=setTimeout(async()=>{ try{
+  const keep={}; Object.keys(S.schedule).filter(d=>daysTo(d)>=-1).forEach(d=>keep[d]=S.schedule[d]);
+  await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",squad:S.squad,schedule:keep})});
+}catch(e){} },1200); }
+const normN=n=>String(n).replace(/[׳’`]/g,"'").replace(/\s+/g," ").trim();
+async function pullInbox(){
+  try{
+    const r=await fetch(`/api/manager?pin=${encodeURIComponent(pin)}&inbox=1`); if(!r.ok) return 0;
+    const {items}=await r.json(); if(!items||!items.length) return 0; let added=0;
+    items.forEach(it=>{
+      let n=S.squad.find(s=>normN(s)===normN(it.name)); if(!n){ n=it.name; S.squad.push(n); }
+      const s=sd(n); if(s.log.some(l=>l.sid===it.id)) return;
+      let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":"רפואי";
+      if(it.kind==="medstatus"){ s.med.status=it.text; if(it.until) s.med.expires=it.until; text=`עדכון סטטוס רפואי: ${it.text}${it.until?" עד "+fmtY(it.until):""}`; }
+      s.log.push({id:uid(),sid:it.id,t:it.t,type,text,st:"חדש",src:"soldier"}); added++;
+    });
+    await api(S);   // save first, only then remove from the inbox
+    await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"ack",ids:items.map(i=>i.id)})});
+    if(added) pub();
+    return added;
+  }catch(e){ return 0; }
+}
 const A={
   preset:d=>{SUM={...PRESETS[+d.i][1]};render()},
   sumcopy:()=>{const b=buildSummary(); copy(`${b.title}\n${b.sub}\n\n`+b.doc.tables.map(t=>t.heading+":\n"+t.rows.map(x=>"• "+x.filter(Boolean).join(" · ")).join("\n")).join("\n\n"))},
@@ -253,7 +308,7 @@ const A={
   tab:d=>{tab=d.k;sel=null;editSquad=false;render()},
   open:d=>{sel=d.n;render();scrollTo(0,0)}, back:()=>{sel=null;render()},
   editsq:()=>{editSquad=true;render()},
-  sqsave:()=>{S.squad=[...document.querySelectorAll("[data-sq]")].filter(c=>c.checked).map(c=>c.dataset.sq);editSquad=false;go()},
+  sqsave:()=>{S.squad=[...document.querySelectorAll("[data-sq]")].filter(c=>c.checked).map(c=>c.dataset.sq);editSquad=false;go();pub()},
   addlog:d=>{const x=$("lx").value.trim(); if(!x) return toast("כתוב מה קרה"); sd(d.n).log.push({id:uid(),t:Date.now(),type:$("lt").value,text:x,st:"חדש"}); go()},
   editlog:d=>openSheet({kind:"log",n:d.n,id:d.id}),
   editord:d=>openSheet({kind:"order",id:d.id}),
@@ -270,7 +325,16 @@ const A={
     closeSheet(); go(); },
   totop:()=>{shSave(); const t=S.tasks.find(x=>x.id===SH.id); S.tasks=[t,...S.tasks.filter(x=>x!==t)]; closeSheet(); go()},
   toics:()=>{ shSave(); const t=S.tasks.find(x=>x.id===SH.id); if(!t.rem){ return toast("בחר תאריך ושעה לתזכורת"); } t.remSent=true; save(); location.href=icsUrl(t); },
-  cpopen:()=>{const o=openLog(); copy("פניות להעלאה:\n"+o.map(l=>`• ${l.n} (${l.type}): ${l.text}`).join("\n")); o.forEach(l=>{sd(l.n).log.find(x=>x.id===l.id).st="הועלה"}); go()},
+  cpopen:()=>{const o=openLog(); copy("פניות פתוחות:\n"+o.map(l=>`• ${l.n} (${l.type}, ${l.st}): ${l.text}`).join("\n"))},
+  newlog:()=>openSheet({kind:"newlog"}),
+  refresh:async()=>{ const n=await pullInbox(); toast(n?`${n} פניות חדשות מהחיילים`:"אין פניות חדשות"); render(); },
+  cpsol:()=>copy(location.origin+"/soldier.html"),
+  schedview:()=>{tab="sched";SD=null;render();scrollTo(0,0)}, back2:()=>{tab="today";render()},
+  sdprev:()=>{SD=shiftDay(SD||todayStr(),-1);render()}, sdnext:()=>{SD=shiftDay(SD||todayStr(),1);render()},
+  sadd:()=>{const x=$("s_x").value.trim(), t=$("s_t").value; if(!x||!t) return toast("כתוב מה קורה ובחר שעה"); const d=SD||todayStr(); (S.schedule[d]=S.schedule[d]||[]).push({id:uid(),t,x}); go(); pub()},
+  sdel:d=>{const k=SD||todayStr(); S.schedule[k]=(S.schedule[k]||[]).filter(s=>s.id!==d.id); go(); pub()},
+  sedit:d=>{const k=SD||todayStr(), s=(S.schedule[k]||[]).find(s=>s.id===d.id), v=prompt("עריכת פריט:",s.x); if(v!==null&&v.trim()){ s.x=v.trim(); go(); pub(); }},
+  sdcopy:()=>{const k=SD||todayStr(), src=S.schedule[shiftDay(k,-1)]||[]; if(!src.length) return toast("אין לו״ז ביום הקודם"); if((S.schedule[k]||[]).length&&!confirm("להוסיף לפריטים הקיימים?")) return; S.schedule[k]=[...(S.schedule[k]||[]),...src.map(s=>({...s,id:uid()}))]; go(); pub()},
   addord:()=>{const x=$("ox").value.trim(); if(!x) return toast("כתוב את ההוראה"); S.orders.push({id:uid(),text:x,from:$("of").value.trim(),due:$("od").value,st:"חדשה"}); go()},
   addtask:()=>{const x=$("tx").value.trim(); if(!x) return toast("כתוב משימה"); S.tasks.push({id:uid(),text:x,due:$("td").value,rem:$("tr").value,pri:+$("tp").value,done:false}); go()},
   tdone:d=>{const t=S.tasks.find(t=>t.id===d.id); t.done=!t.done; go()},
@@ -285,6 +349,7 @@ const A={
   }
 };
 function shSave(){
+  if(SH.kind==="newlog"){ const x=val("e_text").trim(); if(!x) return; sd(val("e_n")).log.push({id:uid(),t:Date.now(),type:val("e_type"),text:x,st:val("e_st").trim()||"חדש"}); return; }
   if(SH.kind==="task"){ const t=S.tasks.find(x=>x.id===SH.id); const rem=val("e_rem"); if(rem!==(t.rem||"")) t.remSent=false;
     Object.assign(t,{text:val("e_text").trim()||t.text,due:val("e_due"),rem,pri:SH.pri}); }
   else if(SH.kind==="order"){ const o=S.orders.find(x=>x.id===SH.id); Object.assign(o,{text:val("e_text").trim()||o.text,from:val("e_from").trim(),due:val("e_due"),st:val("e_st").trim()||o.st}); }
@@ -325,6 +390,7 @@ const onClick=e=>{
 app.addEventListener("click",onClick); $("sheet").addEventListener("click",onClick);
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-a]"); if(b) A[b.dataset.a](b.dataset)});
 app.addEventListener("change",e=>{
+  if(e.target.dataset.sd){ SD=e.target.value||null; render(); return; }
   const k=e.target.dataset.sum; if(k){ SUM[k]=e.target.value; if(k==="src"){SUM.type="";SUM.soldier="";} render(); return; }
   const f=e.target.dataset.f; if(!f) return; const s=sd(e.target.dataset.n);
   if(f==="notes") s.notes=e.target.value; else s.med[f]=e.target.value; save();
