@@ -122,6 +122,26 @@ export default async function handler(req, res) {
       res.setHeader("Content-Disposition", 'attachment; filename="summary.pdf"');
       return res.end(pdf);
     }
+    const IN = "soldier/inbox/", PUB = "soldier/public/";
+    if (req.method === "GET" && req.query.inbox !== undefined) {
+      const bl = (await list({ prefix: IN, limit: 500, token })).blobs;
+      const items = (await Promise.all(bl.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((p, q) => p.t - q.t);
+      return res.json({ items });
+    }
+    if (req.method === "POST" && req.body?.action === "ack") {
+      const ids = new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String));
+      const bl = (await list({ prefix: IN, limit: 500, token })).blobs.filter(x => ids.has(x.pathname.slice(IN.length).replace(/\.json$/, "")));
+      if (bl.length) await del(bl.map(x => x.url), { token });
+      return res.json({ ok: true, deleted: bl.length });
+    }
+    if (req.method === "POST" && req.body?.action === "publish") {
+      const body = JSON.stringify({ squad: (req.body.squad || []).slice(0, 60).map(s => String(s).slice(0, 60)), schedule: req.body.schedule || {} });
+      if (body.length > 100000) return res.status(413).json({ error: "too big" });
+      const old = (await list({ prefix: PUB, limit: 1000, token })).blobs;
+      await putAny(`${PUB}${Date.now()}.json`, body);
+      if (old.length) await del(old.map(x => x.url), { token });
+      return res.json({ ok: true });
+    }
     const blobs = (await list({ prefix: P, limit: 1000, token })).blobs.sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
     if (req.method === "POST") {
       const body = JSON.stringify(req.body.data ?? null);
