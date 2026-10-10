@@ -59,13 +59,15 @@ a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid
 .hint{font-size:12px;color:var(--mut)}
 </style>
 </head>
-<body><main><div class="top"><h1>לוח <span>מפקד</span></h1><span id="st"></span></div><div id="app"></div></main>
+<body><main><div class="top"><h1>לוח <span>מפקד</span></h1><span><button class="sec n" id="who" data-a="switch" style="margin-inline-end:8px"></button><span id="st"></span></span></div><div id="app"></div></main>
 <nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
 const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
 const EVK=["בטיחות","משמעת","פער כוננות"], EVI={"בטיחות":"🦺","משמעת":"⚖️","פער כוננות":"🎯"}, WAIT="ממתין לתשובה מרמ״מ";
-let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null;
+let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null, acct=1, accts=4;
+const SQ=()=>S.squads[acct]||(S.squads[acct]=[]);                 // the soldiers this account tracks
+const SQALL=()=>[...new Set(Object.values(S.squads||{}).flat())];  // everyone tracked by anyone
 const PRI=["🔴 דחוף","🟡 רגיל","⚪ נמוך"];
 const $=id=>document.getElementById(id), app=$("app");
 const nl=s=>esc(s).replace(/\n/g,"<br>");
@@ -82,18 +84,43 @@ const dl=(blob,name)=>{const u=URL.createObjectURL(blob),a=document.createElemen
 const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}}, lsSet=(k,v)=>{try{v===null?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}};
 
 const api=async data=>{
-  const r=await fetch(data===undefined?`/api/manager?pin=${encodeURIComponent(pin)}`:"/api/manager",data===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,data})});
-  if(r.status===401) throw new Error("401"); if(!r.ok) throw new Error("server"); return r.json();
+  const r=await fetch(data===undefined?`/api/manager?pin=${encodeURIComponent(pin)}`:"/api/manager",data===undefined?{}:{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,data,rev:S?.rev??0})});
+  if(r.status===401) throw new Error("401");
+  if(r.status===409) throw new Error("stale");       // another commander saved first
+  if(!r.ok) throw new Error("server");
+  const j=await r.json();
+  if(data!==undefined&&j.rev!==undefined) S.rev=j.rev;
+  return j;
 };
-const save=()=>{ $("st").textContent="שומר…"; clearTimeout(timer); timer=setTimeout(async()=>{ try{await api(S);$("st").textContent="נשמר ✓"}catch(e){$("st").textContent="⚠️ לא נשמר"} },500); };
+// A stale write would wipe the other commanders' day, so we drop our last change and reload.
+async function onStale(){
+  $("st").textContent="⚠️ עודכן ממפקד אחר";
+  toast("הלוח עודכן ממפקד אחר — השינוי האחרון לא נשמר, טוען מחדש");
+  clearTimeout(timer);
+  try{ const r=await api(); applyState(r); render(); $("st").textContent="נטען מחדש"; }catch(e){}
+}
+const save=()=>{ $("st").textContent="שומר…"; clearTimeout(timer); timer=setTimeout(async()=>{ try{await api(S);$("st").textContent="נשמר ✓"}catch(e){ if(e.message==="stale") return onStale(); $("st").textContent="⚠️ לא נשמר"; } },500); };
 const go=()=>{save();render()};
 
+// Normalises whatever the server returned into the shape the board works with.
+function applyState(r){
+  acct=r.acct||1; accts=r.accts||4;
+  S=Object.assign({soldiers:{},orders:[],tasks:[]},r.data||{});
+  S.tasks.forEach(t=>{ if(t.pri===undefined) t.pri=t.hot?0:1; });
+  S.schedule=S.schedule||{};
+  Object.values(S.soldiers).forEach(s=>s.log.forEach(l=>{ if(l.st==="הועלה") l.st=WAIT; }));
+  S.events=Array.isArray(S.events)?S.events:[];
+  // squads are per-account; a board saved before accounts existed kept a single flat list
+  if(!S.squads||typeof S.squads!=="object"||Array.isArray(S.squads)){ const old=S.squads; S.squads={}; if(Array.isArray(S.squad)&&S.squad.length) S.squads[1]=S.squad; else if(Array.isArray(old)&&old.length) S.squads[1]=old; }
+  for(let a=1;a<=accts;a++) if(!Array.isArray(S.squads[a])) S.squads[a]=[];
+  delete S.squad;
+  S.rev=Number(S.rev)||0;
+}
 async function boot(){
   pin=lsGet("mpin")||"";
   for(;;){
     if(!pin){ pin=prompt("קוד כניסה:")||""; if(!pin){ app.innerHTML='<div class="card">נדרש קוד. רענן את הדף.</div>'; return; } }
-    try{ const r=await api(); S=Object.assign({squad:[],soldiers:{},orders:[],tasks:[]},r.data||{}); S.tasks.forEach(t=>{ if(t.pri===undefined) t.pri=t.hot?0:1; }); S.schedule=S.schedule||{}; Object.values(S.soldiers).forEach(s=>s.log.forEach(l=>{ if(l.st==="הועלה") l.st=WAIT; }));
-      S.events=Array.isArray(S.events)?S.events:[];
+    try{ applyState(await api());
       // daily events live for one day only; the nightly cron files them into the report, this is the fallback
       const td=todayStr(); if(S.events.some(e=>dayOfMs(e.t)<td)){ S.events=S.events.filter(e=>dayOfMs(e.t)>=td); setTimeout(save,0); }
       lsSet("mpin",pin); break; }
@@ -105,8 +132,9 @@ async function boot(){
 }
 
 function render(){
+  $("who").textContent=`מפקד ${acct}`;
   $("nav").innerHTML=[["today","🎛️","בקרה"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"],["sum","📊","סיכומים"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
-  if(!S.squad.length||editSquad) return app.innerHTML=squadPicker();
+  if(!SQ().length||editSquad) return app.innerHTML=squadPicker();
   app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tab==="sched"?schedule():tasks();
 }
 const stCls=s=>s==="חדש"||s==="חדשה"?"sun":s===WAIT?"wait":["נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
@@ -117,7 +145,7 @@ function renderSheet(){
   let b="";
   const chips=l=>`<div class="chips">${l.map(s=>`<button class="sec" data-a="chip" data-v="${s}">${s}</button>`).join("")}</div>`;
   if(SH.kind==="newlog"){
-    b=`<h3>פנייה חדשה</h3><select id="e_n">${S.squad.map(n=>`<option ${n===SH.n?"selected":""}>${esc(n)}</option>`).join("")}</select>
+    b=`<h3>פנייה חדשה</h3><select id="e_n">${SQ().map(n=>`<option ${n===SH.n?"selected":""}>${esc(n)}</option>`).join("")}</select>
     <select id="e_type">${TYPES.map(t=>`<option>${t}</option>`).join("")}</select>
     <textarea id="e_text" placeholder="מה הפנייה / הבקשה"></textarea>
     <label>סטטוס</label><input id="e_st" value="חדש">${chips(LST)}
@@ -133,7 +161,7 @@ function renderSheet(){
   } else if(SH.kind==="event"){
     const e=SH.id?(S.events||[]).find(x=>x.id===SH.id):null;
     b=`<h3>${e?"עריכת אירוע":"אירוע חדש"}</h3>
-    <label>חייל</label><select id="e_n">${S.squad.map(n=>`<option ${n===(e?.n??SH.n)?"selected":""}>${esc(n)}</option>`).join("")}</select>
+    <label>חייל</label><select id="e_n">${SQ().map(n=>`<option ${n===(e?.n??SH.n)?"selected":""}>${esc(n)}</option>`).join("")}</select>
     <label>סוג האירוע</label><select id="e_kind">${EVK.map(k=>`<option value="${esc(k)}" ${k===(e?.kind??"משמעת")?"selected":""}>${EVI[k]} ${k}</option>`).join("")}</select>
     <label>מה קרה</label><textarea id="e_text" placeholder="תיאור קצר ועובדתי">${esc(e?.text||"")}</textarea>
     <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button>${e?'<button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button>':""}</div>`;
@@ -164,16 +192,17 @@ function renderSheet(){
 const openSheet=s=>{SH=s;renderSheet()};
 const closeSheet=()=>{SH=null;renderSheet()};
 function squadPicker(){
-  return `<div class="card"><h2>מי הכיתה שלך?</h2><p class="mut">סמן את החיילים שבאחריותך.</p>${ROSTER.map(n=>`<label class="item" style="font-size:17px;color:var(--ink)"><input class="chk" type="checkbox" data-sq="${esc(n)}" ${S.squad.includes(n)?"checked":""}><span class="t">${esc(n)}</span></label>`).join("")}<button data-a="sqsave" style="width:100%;margin-top:10px">שמור</button></div>`;
+  const mine=SQ(), by={}; ROSTER.forEach(n=>by[n]=Object.entries(S.squads||{}).filter(([a,l])=>+a!==acct&&l.includes(n)).map(([a])=>a));
+  return `<div class="card"><h2>מי הכיתה שלך?</h2><p class="mut">סמן את החיילים שבאחריותך. חייל יכול להיות במעקב של כמה מפקדים.</p>${ROSTER.map(n=>`<label class="item" style="font-size:17px;color:var(--ink)"><input class="chk" type="checkbox" data-sq="${esc(n)}" ${mine.includes(n)?"checked":""}><span class="t">${esc(n)}${by[n].length?` <span class="pill">גם מפקד ${by[n].join(", ")}</span>`:""}</span></label>`).join("")}<button data-a="sqsave" style="width:100%;margin-top:10px">שמור</button></div>`;
 }
-function openLog(){ const o=[]; S.squad.forEach(n=>sd(n).log.forEach(l=>{ if(isOpen(l.st)) o.push({n,...l}); })); return o.sort((a,b)=>(a.st==="חדש"?0:1)-(b.st==="חדש"?0:1)||a.t-b.t); }
+function openLog(){ const o=[]; SQ().forEach(n=>sd(n).log.forEach(l=>{ if(isOpen(l.st)) o.push({n,...l}); })); return o.sort((a,b)=>(a.st==="חדש"?0:1)-(b.st==="חדש"?0:1)||a.t-b.t); }
 const hhmm=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
-function todayEvents(){ const t=todayStr(); return (S.events||[]).filter(e=>dayOfMs(e.t)===t).sort((a,b)=>a.t-b.t); }
+function todayEvents(){ const t=todayStr(), mine=new Set(SQ()); return (S.events||[]).filter(e=>dayOfMs(e.t)===t&&mine.has(e.n)).sort((a,b)=>a.t-b.t); }
 function today(){
   const t=todayStr(), ol=openLog(), nNew=ol.filter(l=>l.st==="חדש").length;
   const urgent=S.tasks.filter(x=>!x.done&&(x.pri===0||(x.due&&daysTo(x.due)<=0)));
   const od=S.orders.filter(x=>x.st!=="בוצעה"&&x.due&&daysTo(x.due)<=2);
-  const med=[]; S.squad.forEach(n=>{const m=sd(n).med; if(m.expires&&daysTo(m.expires)<=7) med.push([n,"תוקף רפואי",m.expires,m.status]); if(m.next&&daysTo(m.next)>=0&&daysTo(m.next)<=3) med.push([n,"תור/מעקב",m.next,""]);});
+  const med=[]; SQ().forEach(n=>{const m=sd(n).med; if(m.expires&&daysTo(m.expires)<=7) med.push([n,"תוקף רפואי",m.expires,m.status]); if(m.next&&daysTo(m.next)>=0&&daysTo(m.next)<=3) med.push([n,"תור/מעקב",m.next,""]);});
   const sch=(S.schedule[t]||[]).slice().sort((a,b)=>a.t.localeCompare(b.t));
   const ev=todayEvents();
   const row=(txt,d)=>`<div class="item"><div class="t">${txt}</div>${d?when(d):""}</div>`;
@@ -209,7 +238,7 @@ function schedule(){
 }
 
 function soldiers(){
-  return `<div class="row" style="margin-bottom:8px"><h2 style="flex:1;margin:0">הכיתה שלי</h2><button class="sec n" data-a="editsq">ערוך הרכב</button></div><div class="card">`+S.squad.map(n=>{
+  return `<div class="row" style="margin-bottom:8px"><h2 style="flex:1;margin:0">הכיתה שלי</h2><button class="sec n" data-a="editsq">ערוך הרכב</button></div><div class="card">`+SQ().map(n=>{
     const s=sd(n), open=s.log.filter(l=>l.st==="חדש").length, m=s.med, w=m.expires&&daysTo(m.expires)<=7;
     return `<div class="sol" data-a="open" data-n="${esc(n)}"><span>${esc(n)}</span><span>${w?'<span class="pill bad">רפואי</span>':""}${open?`<span class="pill sun">${open} פתוחות</span>`:""}‹</span></div>`;
   }).join("")+`</div>`;
@@ -265,7 +294,7 @@ function buildSummary(){
   if(SUM.src==="log"){
     title=SUM.type?`סיכום ${SUM.type}`:"סיכום פניות ובקשות";
     const rows=[];
-    S.squad.filter(n=>!SUM.soldier||n===SUM.soldier).forEach(n=>sd(n).log.forEach(l=>{
+    SQ().filter(n=>!SUM.soldier||n===SUM.soldier).forEach(n=>sd(n).log.forEach(l=>{
       if((!SUM.type||l.type===SUM.type)&&pass(isOpen(l.st),SUM.status)) rows.push({n,l});
     }));
     rows.sort((a,b)=>a.n.localeCompare(b.n,"he")||a.l.t-b.l.t);
@@ -274,7 +303,7 @@ function buildSummary(){
     rows.forEach(({n,l})=>prev.push(`<b>${esc(n)}</b> · ${esc(l.type)} · <span class="pill ${stCls(l.st)}">${esc(l.st)}</span><br><small>${fmt(dayOfMs(l.t))}</small> ${nl(l.text)}`));
     sections.push({heading:SUM.type||"פניות ובקשות",items:rows.map(({n,l})=>waItem(n,`${l.type} · ${l.st} · ${fmt(dayOfMs(l.t))}`,l.text))});
     if(SUM.type==="רפואי"){
-      const med=S.squad.filter(n=>(!SUM.soldier||n===SUM.soldier)&&(sd(n).med.status||sd(n).med.expires||sd(n).med.next));
+      const med=SQ().filter(n=>(!SUM.soldier||n===SUM.soldier)&&(sd(n).med.status||sd(n).med.expires||sd(n).med.next));
       tables.push({heading:"סטטוס רפואי כללי",cols:[{h:"חייל",w:2.2},{h:"סטטוס",w:5},{h:"תוקף עד",w:2},{h:"תור/מעקב הבא",w:2}],
         rows:med.map(n=>{const m=sd(n).med;return [n,m.status||"",fmtY(m.expires),fmtY(m.next)]})});
       med.forEach(n=>{const m=sd(n).med; prev.push(`<b>${esc(n)}</b> · סטטוס כללי<br>${esc(m.status||"")}${m.expires?` · תוקף ${fmtY(m.expires)}`:""}${m.next?` · תור ${fmtY(m.next)}`:""}`)});
@@ -305,7 +334,7 @@ function summaries(){
   <div class="card"><h3>או בנה סיכום בעצמך</h3>
     <label>מה לסכם</label><select data-sum="src">${opt("log","פניות ובקשות של החיילים",SUM.src)}${opt("ord","הוראות מלמעלה",SUM.src)}${opt("task","המשימות שלי",SUM.src)}</select>
     ${SUM.src==="log"?`<label>סוג</label><select data-sum="type">${opt("","הכל",SUM.type)}${TYPES.map(t=>opt(t,t,SUM.type)).join("")}</select>
-    <label>חייל</label><select data-sum="soldier">${opt("","כל הכיתה",SUM.soldier)}${S.squad.map(n=>opt(n,n,SUM.soldier)).join("")}</select>`:""}
+    <label>חייל</label><select data-sum="soldier">${opt("","כל הכיתה",SUM.soldier)}${SQ().map(n=>opt(n,n,SUM.soldier)).join("")}</select>`:""}
     <label>סטטוס</label><select data-sum="status">${Object.entries(STL).map(([k,l])=>opt(k,l,SUM.status)).join("")}</select>
     <span class="hint">"סגור" = סטטוס נסגר או בוצעה. כל סטטוס אחר נחשב פתוח.</span></div>
   <div class="card"><h3>${esc(b.title)} · ${b.count} פריטים</h3>
@@ -316,7 +345,7 @@ const shiftDay=(d,n)=>new Date(new Date(d+"T12:00:00").getTime()+n*864e5).toLoca
 let pubTimer;
 function pub(){ clearTimeout(pubTimer); pubTimer=setTimeout(async()=>{ try{
   const keep={}; Object.keys(S.schedule).filter(d=>daysTo(d)>=-1).forEach(d=>keep[d]=S.schedule[d]);
-  await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",squad:S.squad,schedule:keep})});
+  await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",squad:SQALL(),schedule:keep})});
 }catch(e){} },1200); }
 const normN=n=>String(n).replace(/[׳’`]/g,"'").replace(/\s+/g," ").trim();
 async function pullInbox(){
@@ -324,13 +353,15 @@ async function pullInbox(){
     const r=await fetch(`/api/manager?pin=${encodeURIComponent(pin)}&inbox=1`); if(!r.ok) return 0;
     const {items}=await r.json(); if(!items||!items.length) return 0; let added=0;
     items.forEach(it=>{
-      let n=S.squad.find(s=>normN(s)===normN(it.name)); if(!n){ n=it.name; S.squad.push(n); }
+      // the log lands on the shared soldier record; only a soldier nobody tracks joins my squad
+      let n=SQALL().find(s=>normN(s)===normN(it.name)); if(!n){ n=it.name; SQ().push(n); }
       const s=sd(n); if(s.log.some(l=>l.sid===it.id)) return;
       let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":it.kind==="general"?"פנייה":"רפואי"; if(it.appt) s.med.next=it.appt;
       if(it.kind==="medstatus"){ s.med.status=it.text; if(it.until) s.med.expires=it.until; text=`עדכון פטור/סטטוס רפואי: ${it.text}${it.until?" (בתוקף עד "+fmtY(it.until)+")":""}`; }
       s.log.push({id:uid(),sid:it.id,t:it.t,type,text,st:"חדש",src:"soldier"}); added++;
     });
-    await api(S);   // save first, only then remove from the inbox
+    // save first, only then remove from the inbox — a rejected save must not lose a request
+    try{ await api(S); }catch(e){ if(e.message==="stale") await onStale(); return 0; }
     await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"ack",ids:items.map(i=>i.id)})});
     if(added) pub();
     return added;
@@ -384,10 +415,11 @@ const A={
       if(!r.ok) throw new Error(r.status===401?"קוד שגוי":"שגיאת שרת"); const url=URL.createObjectURL(await r.blob());
       const a=document.createElement("a"); a.href=url; a.download="summary.pdf"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000);
     }catch(e){ toast("יצירת ה-PDF נכשלה: "+e.message); } finally{ btn.textContent=old; } },
+  switch:()=>{ if(!confirm(`אתה מחובר כמפקד ${acct}. להתנתק ולהיכנס עם קוד אחר?`)) return; lsSet("mpin",null); location.reload(); },
   tab:d=>{tab=d.k;sel=null;editSquad=false;render()},
   open:d=>{sel=d.n;render();scrollTo(0,0)}, back:()=>{sel=null;render()},
   editsq:()=>{editSquad=true;render()},
-  sqsave:()=>{S.squad=[...document.querySelectorAll("[data-sq]")].filter(c=>c.checked).map(c=>c.dataset.sq);editSquad=false;go();pub()},
+  sqsave:()=>{S.squads[acct]=[...document.querySelectorAll("[data-sq]")].filter(c=>c.checked).map(c=>c.dataset.sq);editSquad=false;go();pub()},
   addlog:d=>{const x=$("lx").value.trim(); if(!x) return toast("כתוב מה קרה"); sd(d.n).log.push({id:uid(),t:Date.now(),type:$("lt").value,text:x,st:"חדש"}); go()},
   editlog:d=>openSheet({kind:"log",n:d.n,id:d.id}),
   editord:d=>openSheet({kind:"order",id:d.id}),
@@ -417,7 +449,7 @@ const A={
   schedall:()=>openSheet({kind:"sched",d:SD||todayStr()}),
   srowadd:()=>{ $("srows").insertAdjacentHTML("beforeend",schRow(null)); $("srows").lastElementChild.querySelector(".s_t").focus(); },
   srowdel:(d,el)=>el.closest(".srow").remove(),
-  newev:()=>{ if(!S.squad.length) return toast("קודם הגדר את הכיתה"); openSheet({kind:"event",n:S.squad[0]}) },
+  newev:()=>{ if(!SQ().length) return toast("קודם הגדר את הכיתה"); openSheet({kind:"event",n:SQ()[0]}) },
   editev:d=>openSheet({kind:"event",id:d.id}),
   cpev:()=>{const ev=todayEvents(); copy(waBlock("אירועי בטיחות, משמעת ופערי כוננות",ev.map(e=>waItem(e.n,`${e.kind} · ${hhmm(e.t)}`,e.text)),`${fmt(todayStr())} · ${plur(ev.length,"אירוע אחד","אירועים")}`))},
   sdcopy:()=>{const k=SD||todayStr(), src=S.schedule[shiftDay(k,-1)]||[]; if(!src.length) return toast("אין לו״ז ביום הקודם"); if((S.schedule[k]||[]).length&&!confirm("להוסיף לפריטים הקיימים?")) return; S.schedule[k]=[...(S.schedule[k]||[]),...src.map(s=>({...s,id:uid()}))]; go(); pub()},
@@ -429,7 +461,7 @@ const A={
     S.tasks.filter(t=>!t.done&&t.rem&&!t.remSent).forEach(t=>{L.push(`${t.text} — תזכורת ב-${t.rem.replace("T"," ")}`); t.remSent=true;});
     S.tasks.filter(t=>!t.done&&!t.rem&&t.due).forEach(t=>L.push(`${t.text} — עד ${t.due}`));
     S.orders.filter(o=>o.st!=="בוצעה"&&o.due).forEach(o=>L.push(`הוראה: ${o.text} — עד ${o.due}`));
-    S.squad.forEach(n=>{const m=sd(n).med; if(m.expires) L.push(`לבדוק תוקף רפואי של ${n} — ${m.expires}`); if(m.next) L.push(`תור/מעקב של ${n} — ${m.next}`);});
+    SQ().forEach(n=>{const m=sd(n).med; if(m.expires) L.push(`לבדוק תוקף רפואי של ${n} — ${m.expires}`); if(m.next) L.push(`תור/מעקב של ${n} — ${m.next}`);});
     if(!L.length) return toast("אין פריטים עם תאריך");
     copy("תוסיף לי לתזכורות בטלפון:\n"+L.map(x=>"• "+x).join("\n")); toast("הועתק. הדבק בצ'אט עם Claude"); go();
   }
@@ -486,7 +518,7 @@ const onClick=e=>{
   if(b.dataset.a==="shclose"&&e.target.closest("[data-stop]")&&!e.target.closest("button")) return; // tap inside sheet body
   A[b.dataset.a]?.(b.dataset,b);
 };
-app.addEventListener("click",onClick); $("sheet").addEventListener("click",onClick);
+app.addEventListener("click",onClick); $("sheet").addEventListener("click",onClick); $("who").addEventListener("click",onClick);
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-a]"); if(b) A[b.dataset.a](b.dataset)});
 app.addEventListener("change",e=>{
   if(e.target.dataset.sd){ SD=e.target.value||null; render(); return; }

@@ -2,7 +2,11 @@ import { put, list, del } from "@vercel/blob";
 import PDFDocument from "pdfkit";
 
 const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
-const PIN = process.env.MANAGER_PIN || process.env.ADMIN_PIN || "1234";
+// One PIN per commander account. All four share the same data; only the tracked squad differs.
+// Override in production with MANAGER_PINS="a,b,c,d" rather than relying on these defaults.
+const PINS = (process.env.MANAGER_PINS || process.env.MANAGER_PIN || "5361,5362,5363,5364").split(",").map(s => s.trim()).filter(Boolean);
+const acctOf = pin => { const i = PINS.indexOf(String(pin ?? "")); return i < 0 ? 0 : i + 1; };
+const ACCTS = PINS.length;
 const P = "manager/data/";
 const FINAL = "manager/final/";
 const KEEP_DAYS = 7;
@@ -135,16 +139,24 @@ const hhmm = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", min
 const dmy = d => (d ? new Date(d + "T12:00:00Z").toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "numeric" }) : "");
 const plur = (n, one, many) => (n === 1 ? one : `${n} ${many}`);
 const oneLine = t => String(t ?? "").replace(/\s*\n\s*/g, " | ");
+// Each account tracks its own squad; `squad` is the pre-accounts shape and is still honoured.
+const squadOf = (S, acct) => {
+  const m = S?.squads;
+  if (m && typeof m === "object") return Array.isArray(m[acct]) ? m[acct] : [];
+  return Array.isArray(S?.squad) && acct === 1 ? S.squad : [];
+};
+const allSquads = S => [...new Set(Array.from({ length: ACCTS }, (_, i) => squadOf(S, i + 1)).flat())];
 
 // Builds the PDF document description for one day: the day's safety / discipline /
 // readiness events, the requests opened that day, and anything still waiting on the RMM.
-export function buildDailyDoc(data, date) {
+export function buildDailyDoc(data, date, acct = 1) {
   const S = data || {};
-  const squad = Array.isArray(S.squad) ? S.squad : [];
+  const squad = squadOf(S, acct);
+  const inSquad = new Set(squad);
   const soldiers = S.soldiers || {};
 
   const events = (Array.isArray(S.events) ? S.events : [])
-    .filter(e => dayOfMs(e.t) === date).sort((a, b) => a.t - b.t);
+    .filter(e => dayOfMs(e.t) === date && inSquad.has(e.n)).sort((a, b) => a.t - b.t);
 
   const todayLogs = [], waiting = [];
   squad.forEach(n => ((soldiers[n] || {}).log || []).forEach(l => {
@@ -198,13 +210,17 @@ async function finalizeManagerDays() {
   const days = [...new Set([shiftDay(today, -1), ...eventDays])].filter(d => d < today).sort();
 
   for (const d of days) {
-    const pdf = await tablePdf(buildDailyDoc(data, d));
-    await putAny(`${FINAL}${d}.pdf`, pdf, "application/pdf");
+    for (let a = 1; a <= ACCTS; a++) {
+      if (!squadOf(data, a).length) continue;
+      const pdf = await tablePdf(buildDailyDoc(data, d, a));
+      await putAny(`${FINAL}${d}-a${a}.pdf`, pdf, "application/pdf");
+    }
   }
 
   const kept = (Array.isArray(data.events) ? data.events : []).filter(e => dayOfMs(e.t) >= today);
   if (kept.length !== (data.events || []).length) {
     data.events = kept;
+    data.rev = (Number(data.rev) || 0) + 1;
     await putAny(`${P}${Date.now()}.json`, JSON.stringify(data));
     if (blobs.length) await del(blobs.map(b => b.url), { token });
   }
@@ -224,7 +240,8 @@ export default async function handler(req, res) {
       return res.json({ ok: true, ...r });
     }
     const pin = req.method === "POST" ? req.body?.pin : req.query.pin;
-    if (pin !== PIN) return res.status(401).json({ error: "unauthorized" });
+    const acct = acctOf(pin);
+    if (!acct) return res.status(401).json({ error: "unauthorized" });
     if (req.method === "POST" && req.body?.action === "pdf") {
       const pdf = await tablePdf(req.body.doc);
       res.setHeader("Content-Type", "application/pdf");
@@ -235,7 +252,7 @@ export default async function handler(req, res) {
     if (req.method === "POST" && req.body?.action === "daily") {
       const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || "") ? req.body.date : todayIL();
       const { data } = await readState();
-      const pdf = await tablePdf(buildDailyDoc(data, date));
+      const pdf = await tablePdf(buildDailyDoc(data, date, acct));
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="daily-${date}.pdf"`);
       return res.end(pdf);
@@ -243,7 +260,8 @@ export default async function handler(req, res) {
     if (req.method === "GET" && (req.query.finals !== undefined || req.query.final !== undefined)) {
       await finalizeManagerDays();
       const all = (await listAll(FINAL))
-        .map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), url: b.url }))
+        .map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), name: b.pathname.slice(FINAL.length), url: b.url }))
+        .filter(x => x.name === `${x.date}-a${acct}.pdf`)
         .sort((a, c) => (a.date < c.date ? 1 : -1));
       if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: dayLabel(x.date) })) });
       const f = all.find(x => x.date === req.query.final);
@@ -275,15 +293,24 @@ export default async function handler(req, res) {
     }
     const blobs = (await list({ prefix: P, limit: 1000, token })).blobs.sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
     if (req.method === "POST") {
-      const body = JSON.stringify(req.body.data ?? null);
+      const incoming = req.body.data ?? null;
+      // Four commanders share one document, so a write built on a stale copy would silently
+      // erase everyone else's day. Reject it and hand back the current state instead.
+      const cur = blobs.length ? await fetch(blobs[0].url).then(r => r.json()).catch(() => null) : null;
+      const curRev = Number(cur?.rev) || 0;
+      if (req.body.rev !== undefined && Number(req.body.rev) !== curRev) {
+        return res.status(409).json({ error: "stale", rev: curRev, data: cur, acct });
+      }
+      const next = incoming && typeof incoming === "object" ? { ...incoming, rev: curRev + 1 } : incoming;
+      const body = JSON.stringify(next);
       if (body.length > 400000) return res.status(413).json({ error: "too big" });
       await putAny(`${P}${Date.now()}.json`, body);
       if (blobs.length) await del(blobs.map(b => b.url), { token });
-      return res.json({ ok: true });
+      return res.json({ ok: true, rev: curRev + 1 });
     }
-    if (!blobs.length) return res.json({ data: null });
+    if (!blobs.length) return res.json({ data: null, acct, accts: ACCTS });
     const data = await fetch(blobs[0].url).then(r => r.json());
-    return res.json({ data });
+    return res.json({ data, acct, accts: ACCTS });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "server", detail: !token ? "no_blob_token" : String(e?.message || e).slice(0, 200) });

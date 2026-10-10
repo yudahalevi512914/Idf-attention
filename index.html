@@ -50,6 +50,11 @@ li small{color:var(--mut)}
 h3{margin:16px 0 0;font-size:18px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 .conf{position:fixed;top:-20px;font-size:22px;pointer-events:none;animation:fall 2.2s ease-in forwards}
+a.lnk{display:inline-block;text-decoration:none;font-weight:800;border:2px solid var(--line);color:var(--ink);padding:10px 14px;border-radius:16px;font-size:15px;background:var(--card)}
+.adbar{margin-top:12px;padding:10px 14px;border-radius:14px;background:var(--sun);color:#16263a;font-weight:600;font-size:14px}
+.allday{color:var(--sun);font-weight:700}
+.rm.on{background:var(--sun);border-color:var(--sun)}
+li>span:first-child{min-width:0}
 @keyframes fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}
 </style>
 </head>
@@ -117,7 +122,7 @@ async function member(){
   const who=info.deviceName||(info.present&&saved)||"";
   if(who){
     ls.set("name",who);
-    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(who)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף. אם נרשמת בטעות, פנה למנהל.</p></div>`;
+    app.innerHTML=head+`<div class="card done"><div class="big">🎉</div><h2>${esc(who)}, רשמנו אותך!</h2><p>אין צורך לעשות שום דבר נוסף. אם נרשמת בטעות, פנה למנהל.</p><a class="lnk" href="/soldier.html">↩ חזרה לממשק החייל</a></div>`;
     return confetti();
   }
   form(head,saved||"");
@@ -146,7 +151,7 @@ function form(head,name){
   app.innerHTML=head+`<div class="card"><h2>האם אתה פה עכשיו? 👀</h2>
   <input id="n" list="r" value="${esc(name)}" placeholder="שם מלא, אפשר להתחיל להקליד" autocomplete="off">
   <datalist id="r">${ROSTER.map(r=>`<option value="${esc(r)}">`).join("")}</datalist>
-  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div id="ch"></div><div class="msg" id="m"></div></div>`;
+  <div class="warn"><span>⚠️</span><div><b>אזהרה:</b> דיווח כוזב יוביל להשלכות כבדות ומפתיעות.<br><em>״מדבר שקר תרחק״</em></div></div><button id="go">אני פה! ✋</button><div id="ch"></div><div class="msg" id="m"></div><div style="margin-top:10px"><a class="lnk" href="/soldier.html">↩ חזרה לממשק החייל</a></div></div>`;
   const m=document.getElementById("m"), ch=document.getElementById("ch");
   const submit=async n=>{ try{ await jcall("",{name:n,dev:devId()}); ls.set("name",n); member(); } catch(e){ if(e.status===409&&e.data?.name){ ls.set("name",e.data.name); member(); } else m.textContent=e.message; } };
   const choices=(title,names,extra)=>{
@@ -194,6 +199,12 @@ async function finals(pin){
 const COMMON=["רופא","מטבח","שפ","בתים","נהג","מתפלל","לוגיסטיקה","פציעה","חופשה","תורנות"];
 const RS=()=>{try{return JSON.parse(localStorage.getItem("reasons")||"{}")}catch(e){return{}}};
 const saveRS=o=>{try{localStorage.setItem("reasons",JSON.stringify(o))}catch(e){}};
+// All-day absences: set once, and every activity for the rest of the day defaults to that
+// reason. A per-activity reason typed in the list still wins over it.
+const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"});
+const AD=()=>{try{const o=JSON.parse(localStorage.getItem("allday")||"{}"); return o.d===today()&&o.m?o.m:{}}catch(e){return{}}};
+const saveAD=m=>{try{localStorage.setItem("allday",JSON.stringify({d:today(),m}))}catch(e){}};
+const reasonOf=n=>{const r=RS()[n]; return (r&&r.trim())||AD()[n]||""};
 async function admin(){
   if(sessionStorage.getItem("ok")!=="1"){
     const p=prompt("קוד מנהל:"); if(!p){ location.hash=""; return; }
@@ -208,15 +219,17 @@ async function admin(){
   const extra=here.filter(h=>!ROSTER.some(r=>norm(r)===norm(h.name)));
   const time=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
   const pct=ROSTER.length?Math.min(100,Math.round(100*(ROSTER.length-missing.length)/ROSTER.length)):0;
+  const ad=AD(), adN=missing.filter(m=>ad[m]).length;
   app.innerHTML=`<header><div class="logo">📋</div><h1>יודה <span>נוכחות</span></h1><div class="date">לוח ניהול</div></header>
   <div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 10px">שם הפעילות</h3>
     <div class="row"><input id="act" value="${esc(data.activity||"")}" placeholder="למשל: אימון בוקר" style="flex:1"><button class="sec" id="sv">שמור</button></div></div>
-  <div class="row"><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button><button class="sec" id="fin">📁 דוחות שמורים</button></div>
+  <div class="row"><a class="sec lnk" href="/manager.html">↩ ללוח המפקד</a><button class="sec" id="cp">העתק רשימה</button><button class="sec" id="rf">רענן</button><button class="sec" id="pdf">📄 דוח יומי</button><button class="sec" id="fin">📁 דוחות שמורים</button></div>
+  ${adN?`<div class="adbar">📅 ${adN===1?"חייל אחד מסומן":`${adN} חיילים מסומנים`} כנעדר כל היום — ההסבר ייכנס אוטומטית לכל פעילות היום.</div>`:""}
   <div class="bar" style="margin-top:14px"><i style="width:${pct}%"></i></div>
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
     <h3>✅ נוכחים</h3><ul>${here.map((h,i)=>`<li><span>${esc(h.name)}</span><span><small>${time(h.t)}</small><button class="sec rm" data-i="${i}">הסר</button></span></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
-    ${ROSTER.length?`<h3>❌ חסרים <span class="hint" style="font-weight:400">(אפשר להוסיף הסבר)</span></h3><datalist id="rl">${[...new Set([...COMMON,...Object.values(RS())])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist><ul>${missing.map(m=>`<li><span>${esc(m)}</span><input class="rsn" data-n="${esc(m)}" list="rl" placeholder="הסבר" value="${esc(RS()[m]||"")}"></li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
+    ${ROSTER.length?`<h3>❌ חסרים <span class="hint" style="font-weight:400">(הסבר, ו-📅 לנעדר כל היום)</span></h3><datalist id="rl">${[...new Set([...COMMON,...Object.values(RS()),...Object.values(AD())])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist><ul>${missing.map(m=>`<li><span>${esc(m)}${ad[m]?`<br><small class="allday">📅 כל היום · ${esc(ad[m])}</small>`:""}</span><span style="display:flex;gap:6px;align-items:center"><input class="rsn" data-n="${esc(m)}" list="rl" placeholder="הסבר" value="${esc(reasonOf(m))}"><button class="sec rm ${ad[m]?"on":""}" data-ad="${esc(m)}" title="נעדר כל היום">📅</button></span></li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
     ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
     <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
   </div>`;
@@ -227,10 +240,18 @@ async function admin(){
   });
   document.getElementById("sv").onclick=async()=>{ try{ await jcall("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
   document.querySelectorAll(".rsn").forEach(i=>i.oninput=()=>{ const o=RS(); if(i.value.trim()) o[i.dataset.n]=i.value.trim(); else delete o[i.dataset.n]; saveRS(o); });
+  document.querySelectorAll("[data-ad]").forEach(b=>b.onclick=()=>{
+    const n=b.dataset.ad, m=AD();
+    if(m[n]){ delete m[n]; saveAD(m); const o=RS(); delete o[n]; saveRS(o); return admin(); }
+    const cur=([...document.querySelectorAll(".rsn")].find(i=>i.dataset.n===n)?.value||"").trim();
+    const r=prompt(`${n} נעדר כל היום. מה הסיבה?`,cur||"");
+    if(r===null||!r.trim()) return;
+    m[n]=r.trim(); saveAD(m); const o=RS(); delete o[n]; saveRS(o); admin();
+  });
   document.getElementById("rs").onclick=async()=>{
     if(!confirm(`לסיים את "${data.activity||"הפעילות"}", לשמור את החסרים לדוח היומי ולאפס את הרשימה?`)) return;
     try{
-      const all=RS(), reasons={}; missing.forEach(m=>{ if(all[m]) reasons[m]=all[m]; });
+      const reasons={}; missing.forEach(m=>{ const r=reasonOf(m); if(r) reasons[m]=r; });
       const res=await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name),reasons});
       saveRS({}); if(res.sheet==="failed") alert("הפעילות נשמרה, אבל העדכון ל-Google Sheets נכשל. בדוק את ההגדרות."); admin();
     }catch(e){ alert(e.message); }
@@ -238,7 +259,7 @@ async function admin(){
   document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
   document.getElementById("fin").onclick=()=>finals(pin);
   document.getElementById("cp").onclick=()=>{
-    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.map(m=>RS()[m]?`${m} — ${RS()[m]}`:m).join("\n")}`;
+    const t=`${data.activity?data.activity+"\n\n":""}נוכחים (${here.length}):\n${here.map(h=>h.name).join("\n")}\n\nחסרים (${missing.length}):\n${missing.map(m=>reasonOf(m)?`${m} — ${reasonOf(m)}${AD()[m]?" (כל היום)":""}`:m).join("\n")}`;
     navigator.clipboard.writeText(t).then(()=>{document.getElementById("cp").textContent="הועתק ✓"});
   };
 }

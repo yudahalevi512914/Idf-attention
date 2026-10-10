@@ -2,7 +2,9 @@ import { put, list, del } from "@vercel/blob";
 import PDFDocument from "pdfkit";
 
 const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
-const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
+// Same commander PINs as the manager board, so one code opens both.
+const PINS = (process.env.MANAGER_PINS || process.env.ADMIN_PIN || "5361,5362,5363,5364").split(",").map(s => s.trim()).filter(Boolean);
+const okPin = p => PINS.includes(String(p ?? ""));
 const LIST = "attendance/list/", ACT = "attendance/activity/", ARC = "attendance/archive/", DEV = "attendance/dev/", FINAL = "attendance/final/";
 const okDev = d => /^[\w-]{16,64}$/.test(d || "");
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
@@ -82,7 +84,7 @@ async function getFonts() {
   return fonts;
 }
 
-async function buildPdf({ dateLabel, reports, timeOf }) {
+export async function buildPdf({ dateLabel, reports, timeOf }) {
   const [reg, bold] = await getFonts();
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 24, font: reg, bufferPages: true });
   doc.registerFont("B", bold);
@@ -126,6 +128,17 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const draw = (ws, xr, y, size, f) => { let x = xr; for (const w of ws) { x -= drawWord(w, x, y, size, f); x -= gapOf(size); } };
   const rtl = (t, xr, y, size, f = reg, maxW = 1e9) => draw(fit(t, size, f, maxW), xr, y, size, f);
   const center = (t, xl, w, y, size, f = reg) => { doc.font(f).fontSize(size).text(String(t), xl, y, { width: w, align: "center", lineBreak: false }); };
+  // Largest readable rendering of a reason that still fits inside one matrix cell.
+  // Falls back to a trimmed first word, and to null when even that is unreadable.
+  const cellFit = (t, maxW) => {
+    const ws = String(t).split(/\s+/).filter(Boolean);
+    if (!ws.length) return null;
+    for (const size of [8, 7.5, 7, 6.5, 6]) if (wordsW(ws, size, "B") <= maxW) return { ws, size };
+    const size = 6; let s = ws[0];
+    while (s.length > 1 && wid(s + ".", size, "B") > maxW) s = s.slice(0, -1);
+    return s.length >= 3 && wid(s + ".", size, "B") <= maxW ? { ws: [s + "."], size } : null;
+  };
+  const cellText = (f, xl, cw, y) => draw(f.ws, xl + (cw + wordsW(f.ws, f.size, "B")) / 2, y + (rowH - f.size) / 2, f.size, "B");
   // wrap into at most maxLines lines, each no wider than maxW
   const wrap = (t, size, f, maxW, maxLines) => {
     const ws = String(t).split(/\s+/).filter(Boolean), lines = [[]];
@@ -152,8 +165,9 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
     .sort((a, b) => b.total - a.total || a.n.localeCompare(b.n, "he"));
   // explanations: number every explained absence (row by row) and keep a list for the last pages
   const rs = reports.map(r => new Map(Object.entries(r.reasons || {}).filter(([, t]) => String(t).trim()).map(([n, t]) => [nk(n), String(t).trim()])));
-  const notes = []; let num = 0;
-  rows.forEach(row => { row.note = reports.map(() => 0); reports.forEach((r, j) => { if (row.abs[j]) { const t = rs[j].get(nk(row.n)); if (t) { row.note[j] = ++num; notes.push({ num, name: row.n, activity: r.activity, t: r.t, reason: t }); } } }); });
+  const notes = [];
+  // notes stay in matrix row order, so the detail table below reads in the same order as the grid
+  rows.forEach(row => { row.note = reports.map(() => null); reports.forEach((r, j) => { if (row.abs[j]) { const t = rs[j].get(nk(row.n)); if (t) { row.note[j] = t; notes.push({ name: row.n, activity: r.activity, t: r.t, reason: t }); } } }); });
   const N = reports.length, colTot = reports.map((_, j) => rows.filter(r => r.abs[j]).length);
   const grand = rows.reduce((s, r) => s + r.total, 0);
 
@@ -166,14 +180,14 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
   const rowsPer = Math.floor((PH - 2 * M - titleH - hdrH - footH) / rowH);
   const rowChunks = []; for (let i = 0; i < Math.max(rows.length, 1); i += rowsPer) rowChunks.push([i, Math.min(rows.length, i + rowsPer)]);
 
-  let page = 0;
+  let page = 0, endY = M; // endY: bottom of the last matrix block, so the explanations can follow it
   (colChunks.length ? colChunks : [[0, 0]]).forEach(([c0, c1]) => rowChunks.forEach(([r0, r1], ri) => {
     if (page) doc.addPage(); page++;
     doc.fillColor(NAVY); rtl("יודה נוכחות – סיכום חוסרים", R, M, 14, "B");
     doc.fillColor("#666"); rtl(`${dateLabel}  |  פעילויות: ${N}  |  חיילים: ${rows.length}  |  סה״כ חיסורים: ${grand}`, R, M + 18, 9.5);
     if (colChunks.length > 1) rtl(`מציג פעילויות ${c0 + 1} עד ${c1}`, R - 330, M + 18, 9.5);
     const lg = (xr, color, label) => { doc.rect(xr - 9, M + 3, 9, 9).fill(color); doc.fillColor("#555"); rtl(label, xr - 13, M + 2.5, 8.5); };
-    lg(R - 190, RED, "חסר"); if (notes.length) lg(R - 240, AMBER, "חסר עם הסבר (המספר מפנה לטבלת ההסברים)");
+    lg(R - 190, RED, "חסר"); if (notes.length) lg(R - 245, AMBER, "חסר עם הסבר (הנוסח המלא בטבלה שמתחת)");
     let y = M + titleH;
     const tx = R - nameW - totW, cols = c1 - c0, left = tx - cols * cellW;
     doc.rect(left, y, nameW + totW + cols * cellW, hdrH).fill(NAVY);
@@ -191,7 +205,13 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
       doc.fillColor(row.total ? RED : "#999"); center(row.total || "–", R - nameW - totW, totW, y + 2.5, 10, row.total ? "B" : reg);
       for (let j = c0; j < c1; j++) if (row.abs[j]) {
         const xl = tx - (j - c0 + 1) * cellW, cx = xl + cellW / 2;
-        if (row.note[j]) { doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(AMBER); doc.fillColor("#fff"); center(row.note[j], xl, cellW, y + 3, 8, "B"); continue; }
+        const nt = row.note[j];
+        if (nt) {
+          doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(AMBER); doc.fillColor("#fff");
+          const f = cellFit(nt, cellW - 5);
+          if (f) cellText(f, xl, cellW, y); else center("•••", xl, cellW, y + 3, 7, "B");
+          continue;
+        }
         doc.rect(xl + 1, y + 1, cellW - 2, rowH - 2).fill(RED);
         doc.moveTo(cx - 3, y + 4.5).lineTo(cx + 3, y + rowH - 4.5).moveTo(cx + 3, y + 4.5).lineTo(cx - 3, y + rowH - 4.5).strokeColor("#fff").lineWidth(1.1).stroke();
       }
@@ -204,19 +224,23 @@ async function buildPdf({ dateLabel, reports, timeOf }) {
       doc.rect(left, y + 2, R - left, footH).fill(NAVY);
       doc.fillColor("#fff"); rtl("חסרים בפעילות", R - 8, y + 5, 10, "B"); center(grand, R - nameW - totW, totW, y + 5, 10, "B");
       for (let j = c0; j < c1; j++) center(colTot[j], tx - (j - c0 + 1) * cellW, cellW, y + 5, 9.5, "B");
-    }
+      endY = y + 2 + footH;
+    } else endY = y;
   }));
   if (notes.length) {
-    const E = [{ h: "מס׳", w: 36 }, { h: "חייל", w: 130 }, { h: "פעילות", w: 200 }, { h: "הסבר", w: W - 36 - 130 - 200 }];
+    const E = [{ h: "חייל", w: 150 }, { h: "פעילות", w: 210 }, { h: "ההסבר המלא", w: W - 150 - 210 }];
     let y;
     const head = () => {
-      doc.fillColor(NAVY); rtl("הסברים לחיסורים", R, y, 14, "B"); y += 26;
+      doc.fillColor(NAVY); rtl("פירוט ההסברים", R, y, 14, "B"); y += 26;
       doc.rect(M, y, W, 18).fill(NAVY); let xr = R; doc.fillColor("#fff");
       E.forEach(c => { rtl(c.h, xr - 6, y + 4, 10, "B"); xr -= c.w; }); y += 18;
     };
-    doc.addPage(); y = M; head();
+    // continue underneath the matrix when at least a header and one row still fit on the page
+    if (PH - M - 12 - (endY + 28) >= 26 + 18 + 20) y = endY + 28;
+    else { doc.addPage(); y = M; }
+    head();
     notes.forEach((nt, i) => {
-      const ls = [String(nt.num), nt.name, `${nt.activity} ${timeOf(nt.t)}`, nt.reason].map((t, k) => wrap(t, 10, reg, E[k].w - 12, 8));
+      const ls = [nt.name, `${nt.activity} ${timeOf(nt.t)}`, nt.reason].map((t, k) => wrap(t, 10, reg, E[k].w - 12, 8));
       const h = Math.max(...ls.map(l => l.length)) * 13 + 6;
       if (y + h > PH - M - 12) { doc.addPage(); y = M; head(); }
       if (i % 2) doc.rect(M, y, W, h).fill(ZEBRA);
@@ -236,7 +260,7 @@ export default async function handler(req, res) {
     if (req.method === "POST") {
       const b = req.body || {};
       if (b.action === "activity" || b.action === "reset" || b.action === "remove") {
-        if (b.pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+        if (!okPin(b.pin)) return res.status(401).json({ error: "unauthorized" });
         if (b.action === "remove") {
           const n = norm(b.name), key = b64(n);
           await del((await listAll(LIST + key)).filter(x => x.pathname === LIST + key).map(x => x.url), { token }).catch(() => {});
@@ -278,7 +302,7 @@ export default async function handler(req, res) {
       return res.json({ ok: true });
     }
     if (req.query.finals !== undefined || req.query.final !== undefined) {
-      if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+      if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
       await finalizeDays();
       const all = (await listAll(FINAL)).map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), url: b.url })).sort((a, c) => (a.date < c.date ? 1 : -1));
       if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: labelOf(`${x.date}T09:00:00Z`) })) });
@@ -290,7 +314,7 @@ export default async function handler(req, res) {
       return res.end(buf);
     }
     if (report !== undefined) {
-      if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+      if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
       const now = Date.now(), date = dayOf(now);
       const reports = await readReports(await listAll(`${ARC}${date}/`));
       if (!reports.length) return res.json({ empty: true });
@@ -311,7 +335,7 @@ export default async function handler(req, res) {
       const { blobs } = await list({ prefix: p, token });
       return res.json({ present: blobs.some(x => x.pathname === p), activity, deviceName });
     }
-    if (pin !== ADMIN_PIN) return res.status(401).json({ error: "unauthorized" });
+    if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
     const blobs = await listAll(LIST);
     return res.json({
       activity: await getActivity(),
