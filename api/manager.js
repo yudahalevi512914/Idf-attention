@@ -128,7 +128,6 @@ export async function tablePdf(input) {
 }
 
 // ---------- daily commander report ----------
-const WAIT = "ממתין לתשובה מרמ״מ";
 const CLOSED_ST = ["נסגר", "בוצעה", "סגור", "טופל", "הושלם"];
 const isOpenSt = st => !CLOSED_ST.includes(String(st ?? "").trim());
 const dayOfMs = t => new Date(t).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
@@ -158,18 +157,19 @@ export function buildDailyDoc(data, date, acct = 1) {
   const events = (Array.isArray(S.events) ? S.events : [])
     .filter(e => dayOfMs(e.t) === date && inSquad.has(e.n)).sort((a, b) => a.t - b.t);
 
+  // anything not closed stays on the report, whatever its status
   const todayLogs = [], waiting = [];
   squad.forEach(n => ((soldiers[n] || {}).log || []).forEach(l => {
     const row = { n, l };
     if (dayOfMs(l.t) === date) todayLogs.push(row);
-    else if (String(l.st || "").trim() === WAIT) waiting.push(row);
+    else if (dayOfMs(l.t) < date && isOpenSt(l.st)) waiting.push(row);
   }));
   const byTime = (a, b) => a.l.t - b.l.t;
   todayLogs.sort(byTime); waiting.sort(byTime);
 
   const logCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6 }];
   const logRow = ({ n, l }) => [n, l.type || "", hhmm(l.t), l.st || "", oneLine(l.text)];
-  const waitCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "נפתח", w: 1.6 }, { h: "פירוט", w: 6 }];
+  const waitCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "נפתח", w: 1.5 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6 }];
 
   const tables = [
     {
@@ -179,16 +179,16 @@ export function buildDailyDoc(data, date, acct = 1) {
     },
     { heading: "פניות ובקשות שנפתחו היום", cols: logCols, rows: todayLogs.map(logRow) },
     {
-      heading: "ממתינות להחלטת רמ״מ מימים קודמים",
+      heading: "פניות פתוחות מימים קודמים",
       cols: waitCols,
-      rows: waiting.map(({ n, l }) => [n, l.type || "", dmy(dayOfMs(l.t)), oneLine(l.text)]),
+      rows: waiting.map(({ n, l }) => [n, l.type || "", dmy(dayOfMs(l.t)), l.st || "", oneLine(l.text)]),
     },
   ];
 
   const open = squad.reduce((a, n) => a + ((soldiers[n] || {}).log || []).filter(l => isOpenSt(l.st)).length, 0);
   return {
     title: "דוח יומי – לוח מפקד",
-    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(todayLogs.length, "פנייה חדשה אחת", "פניות חדשות")} · ${plur(waiting.length, "אחת ממתינה לרמ״מ", "ממתינות לרמ״מ")} · ${open} פתוחות בסך הכל`,
+    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(todayLogs.length, "פנייה חדשה אחת", "פניות חדשות")} · ${plur(waiting.length, "פנייה פתוחה אחת מימים קודמים", "פתוחות מימים קודמים")} · ${open} פתוחות בסך הכל`,
     tables,
   };
 }

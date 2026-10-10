@@ -44,6 +44,7 @@ nav button b{font-size:21px;font-weight:400}nav button.on{color:var(--ok)}
 .lnks{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid var(--line);color:var(--ink);padding:8px 12px;border-radius:12px;font-size:14px;background:var(--card)}
 .pill.wait{background:#dbeafe;color:#1d4ed8}@media(prefers-color-scheme:dark){.pill.wait{background:#1e3a5f;color:#93c5fd}}
+.pill.app{background:#d1fae5;color:#047857}@media(prefers-color-scheme:dark){.pill.app{background:#0f3d2e;color:#6ee7b7}}
 .tm{display:inline-block;min-width:52px;font-weight:800;color:var(--ok)}
 .chead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.chead h3{margin:0}
 .item.tap .t{cursor:pointer}
@@ -63,7 +64,7 @@ a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid
 <nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
-const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
+const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","אושר","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
 const EVK=["בטיחות","משמעת","פער כוננות"], EVI={"בטיחות":"🦺","משמעת":"⚖️","פער כוננות":"🎯"}, WAIT="ממתין לתשובה מרמ״מ";
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null, acct=1, accts=4;
 const SQ=()=>S.squads[acct]||(S.squads[acct]=[]);                 // the soldiers this account tracks
@@ -137,7 +138,7 @@ function render(){
   if(!SQ().length||editSquad) return app.innerHTML=squadPicker();
   app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tab==="sched"?schedule():tasks();
 }
-const stCls=s=>s==="חדש"||s==="חדשה"?"sun":s===WAIT?"wait":["נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
+const stCls=s=>s==="חדש"||s==="חדשה"?"sun":s===WAIT?"wait":s==="אושר"?"app":["נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
 const schRow=s=>`<div class="srow row" style="margin-top:6px" data-id="${esc(s?.id||"")}"><input class="s_t" type="time" value="${esc(s?.t||"")}" style="flex:0 0 118px"><input class="s_x" value="${esc(s?.x||"")}" placeholder="מה קורה"><button class="x n" data-a="srowdel">✕</button></div>`;
 function renderSheet(){
   const box=$("sheet");
