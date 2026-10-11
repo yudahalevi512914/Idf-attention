@@ -129,11 +129,11 @@ async function boot(){
   }
   render();
   pullInbox().then(n=>{ if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } else pub(); });
-  // Each check wakes the database, which then stays up ~5 minutes. So: check when the board
-  // comes back to the screen (at most every 2 minutes), and in the background only every 15.
+  // Every check wakes the database for at least 5 minutes (fixed on Neon's free plan), so there
+  // is no background polling: new requests are pulled when the board comes back to the screen
+  // (at most every 2 minutes) and by the refresh button.
   const check=async()=>{ if(document.hidden||tab!=="today"||SH||Date.now()-lastPull<120000) return; const n=await pullInbox(); if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } };
   document.addEventListener("visibilitychange",check);
-  setInterval(check,15*60000);
 }
 
 function render(){
