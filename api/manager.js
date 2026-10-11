@@ -46,7 +46,7 @@ const s = (v, n) => String(v ?? "").slice(0, n);
 export async function tablePdf(input) {
   const [reg, bold] = await getFonts();
   const tables = (Array.isArray(input?.tables) ? input.tables : []).slice(0, 20).map(t => ({
-    heading: s(t.heading, 100),
+    heading: s(t.heading, 100), grouped: !!t.grouped,
     cols: (Array.isArray(t.cols) ? t.cols : []).slice(0, 8).map(c => ({ h: s(c.h, 40), w: Math.max(1, +c.w || 1) })),
     rows: (Array.isArray(t.rows) ? t.rows : []).slice(0, 1000).map(r => (Array.isArray(r) ? r : []).slice(0, 8).map(c => s(c, 600))),
   }));
@@ -105,7 +105,7 @@ export async function tablePdf(input) {
   const FS = 10, LH = 13;
   for (const t of tables) {
     if (y > PH - 120) { doc.addPage(); y = M; }
-    doc.fillColor(NAVY); text(`${t.heading} (${t.rows.length})`, R, y, 14, "B"); y += 24;
+    doc.fillColor(NAVY); text(t.grouped ? t.heading : `${t.heading} (${t.rows.length})`, R, y, 14, "B"); y += 24;
     if (!t.rows.length || !t.cols.length) { doc.fillColor("#666"); text("אין פריטים.", R, y, 11); y += 26; continue; }
     const tw = t.cols.reduce((a, c) => a + c.w, 0); let xr = R;
     const cols = t.cols.map(c => { const w = (c.w / tw) * W; const o = { ...c, xr, w }; xr -= w; return o; });
@@ -114,13 +114,18 @@ export async function tablePdf(input) {
       cols.forEach(c => text(c.h, c.xr - 6, y + 5, 10, "B", c.w - 10)); y += 20;
     };
     header();
+    // grouped tables: a group starts where the first cell is filled; zebra and a rule per group
+    let band = -1;
     t.rows.forEach((row, i) => {
+      const start = t.grouped && String(row[0] ?? "") !== "";
+      if (!t.grouped || start) band++;
       const cells = cols.map((c, k) => lines(row[k] ?? "", FS, reg, c.w - 12));
       const h = Math.max(...cells.map(l => l.length)) * LH + 8;
       if (y + h > PH - M - 22) { doc.addPage(); y = M; header(); }
-      if (i % 2) doc.rect(M, y, W, h).fill(ZEBRA);
+      if (band % 2) doc.rect(M, y, W, h).fill(ZEBRA);
+      if (start && i) doc.moveTo(M, y).lineTo(R, y).strokeColor(NAVY).lineWidth(0.8).stroke();
       doc.fillColor("#111");
-      cols.forEach((c, k) => cells[k].forEach((ws, li) => draw(ws, c.xr - 6, y + 4 + li * LH, FS, reg)));
+      cols.forEach((c, k) => cells[k].forEach((ws, li) => draw(ws, c.xr - 6, y + 4 + li * LH, FS, t.grouped && k === 0 ? "B" : reg)));
       doc.moveTo(M, y + h).lineTo(R, y + h).strokeColor(LINE).lineWidth(0.4).stroke();
       y += h;
     });
@@ -161,37 +166,41 @@ export function buildDailyDoc(data, date, acct = 1) {
 
   const events = (Array.isArray(S.events) ? S.events : [])
     .filter(e => dayOfMs(e.t) === date && (e.n ? inSquad.has(e.n) : e.a === acct)).sort((a, b) => a.t - b.t);
+  const evOf = kind => events.filter(e => e.kind === kind).map(e => `${e.n || "כללי"} · ${hhmm(e.t)}: ${oneLine(e.text)}`);
 
-  // every request that is not closed, whatever its status or the day it was opened,
-  // split into medical, exit requests and everything else
+  // every request that is not closed, whatever its status or the day it was opened
   const open = [];
   squad.forEach(n => ((soldiers[n] || {}).log || []).forEach(l => {
     if (isOpenSt(l.st) && dayOfMs(l.t) <= date) open.push({ n, l });
   }));
   open.sort((a, b) => a.l.t - b.l.t);
-  const groupOf = l => (l.type === "רפואי" ? "med" : l.type === "בקשת יציאה" ? "exit" : "other");
   const opened = l => (dayOfMs(l.t) === date ? `היום ${hhmm(l.t)}` : dmy(dayOfMs(l.t)));
-  const reqCols = [{ h: "חייל", w: 2.4 }, { h: "נפתח", w: 1.7 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6.5 }];
-  const reqRows = g => open.filter(x => groupOf(x.l) === g).map(({ n, l }) => [n, opened(l), l.st || "", oneLine(l.text)]);
-  const otherCols = [{ h: "חייל", w: 2.2 }, { h: "סוג", w: 1.6 }, { h: "נפתח", w: 1.6 }, { h: "סטטוס", w: 2 }, { h: "פירוט", w: 5.6 }];
-  const otherRows = open.filter(x => groupOf(x.l) === "other").map(({ n, l }) => [n, l.type || "", opened(l), l.st || "", oneLine(l.text)]);
+  const GROUP = { "רפואי": "med", "ת״ש": "tash", "שלישות": "shal" };
+  const req = (g, withType) => open.filter(x => (GROUP[x.l.type] || "special") === g)
+    .map(({ n, l }) => `${n}${withType && l.type ? ` · ${l.type}` : ""} · ${opened(l)} · ${l.st || ""}: ${oneLine(l.text)}`);
 
-  const tables = [
-    {
-      heading: "אירועי היום",
-      cols: [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "פירוט", w: 6 }],
-      rows: events.map(e => [e.n || "כללי", e.kind || "", hhmm(e.t), oneLine(e.text)]),
-    },
-    { heading: "רפואה", cols: reqCols, rows: reqRows("med") },
-    { heading: "בקשות יציאה", cols: reqCols, rows: reqRows("exit") },
-    { heading: "בקשות ופניות אחרות", cols: otherCols, rows: otherRows },
+  // typed in by the commander right before issuing (kept per account and day)
+  const manual = S.daily?.[acct]?.[date] || {};
+  const textLines = t => String(t ?? "").split(/\n/).map(x => x.trim()).filter(Boolean);
+  const manpower = [...textLines(manual.kh), ...evOf("פער בכח אדם").map(x => `פער: ${x}`)];
+
+  const sections = [
+    ["מצב כח אדם", manpower, "לא הוזן"],
+    ["שלישות", req("shal")],
+    ["כוננות", evOf("פער כוננות")],
+    ["ת״ש", req("tash")],
+    ["רפואה", req("med")],
+    ["משמעת", evOf("משמעת")],
+    ["בקשות מיוחדות", req("special", true)],
+    ["אירועי בטיחות", evOf("בטיחות")],
+    ["התייחסות אישית", textLines(manual.personal), "—"],
   ];
+  const rows = sections.flatMap(([h, items, none = "אין"]) => (items.length ? items : [none]).map((x, i) => [i ? "" : h, x]));
 
-  const newToday = open.filter(x => dayOfMs(x.l.t) === date).length;
   return {
     title: "דוח יומי – לוח מפקד",
-    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(open.length, "בקשה פתוחה אחת", "בקשות פתוחות")}, מהן ${newToday} מהיום`,
-    tables,
+    sub: `${dayLabel(date)} · ${plur(open.length, "בקשה פתוחה אחת", "בקשות פתוחות")} · ${plur(events.length, "אירוע אחד", "אירועים")}`,
+    tables: [{ heading: "סיכום יומי", grouped: true, cols: [{ h: "נושא", w: 2.2 }, { h: "פירוט", w: 8 }], rows }],
   };
 }
 

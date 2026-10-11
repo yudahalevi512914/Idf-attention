@@ -64,7 +64,7 @@ a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid
 <nav id="nav"></nav><div id="sheet"></div><div id="toast"></div>
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
-const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","אושר","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
+const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","ת״ש","שלישות","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","אושר","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
 const EVK=["בטיחות","משמעת","פער כוננות","פער בכח אדם"], EVI={"בטיחות":"🦺","משמעת":"⚖️","פער כוננות":"🎯","פער בכח אדם":"👥"}, WAIT="ממתין לתשובה מרמ״מ";
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null, acct=1, accts=4;
 const SQ=()=>S.squads[acct]||(S.squads[acct]=[]);                 // the soldiers this account tracks
@@ -170,6 +170,12 @@ function renderSheet(){
     <label>סוג האירוע</label><select id="e_kind">${EVK.map(k=>`<option value="${esc(k)}" ${k===(e?.kind??"משמעת")?"selected":""}>${EVI[k]} ${k}</option>`).join("")}</select>
     <label>מה קרה</label><textarea id="e_text" placeholder="תיאור קצר ועובדתי">${esc(e?.text||"")}</textarea>
     <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button>${e?'<button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button>':""}</div>`;
+  } else if(SH.kind==="daily"){
+    const m=(S.daily?.[acct]||{})[todayStr()]||{};
+    b=`<h3>📄 הנפקת דוח יומי</h3><span class="hint">שאר השורות (שלישות, כוננות, ת״ש, רפואה, משמעת, בקשות מיוחדות, אירועי בטיחות) נלקחות מהנתונים שבלוח.</span>
+    <label>מצב כח אדם (חובה)</label><textarea id="d_kh" placeholder="למשל: 27 בסד״כ, 24 נוכחים, 2 בבית, 1 ברפואה">${esc(m.kh||"")}</textarea>
+    <label>התייחסות אישית</label><textarea id="d_personal" placeholder="טקסט חופשי שיופיע בסוף הדוח">${esc(m.personal||"")}</textarea>
+    <button data-a="dailygo" style="width:100%;margin-top:8px">הנפק דוח</button>`;
   } else if(SH.kind==="finals"){
     b=`<h3>📁 דוחות יומיים שמורים</h3><span class="hint">הדוח הסופי של כל יום, ${7} הימים האחרונים.</span>
     ${SH.list.length?SH.list.map(f=>`<div class="item"><div class="t">${esc(f.label)}</div><button class="sec" data-a="dailyget" data-d="${esc(f.date)}">הורד</button></div>`).join(""):'<div class="empty">עדיין אין דוחות שמורים. הדוח הראשון ייווצר הלילה.</div>'}`;
@@ -408,7 +414,7 @@ async function pullInbox(){
       // the log lands on the shared soldier record; only a soldier nobody tracks joins my squad
       let n=SQALL().find(s=>normN(s)===normN(it.name)); if(!n){ n=it.name; SQ().push(n); }
       const s=sd(n); if(s.log.some(l=>l.sid===it.id)) return;
-      let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":it.kind==="general"?"פנייה":"רפואי"; if(it.appt) s.med.next=it.appt;
+      let text=it.text; const type=it.kind==="exit"?"בקשת יציאה":it.kind==="general"?(it.cat==="ת״ש"||it.cat==="שלישות"?it.cat:"פנייה"):"רפואי"; if(it.appt) s.med.next=it.appt;
       if(it.kind==="medstatus"){ s.med.status=it.text; if(it.until) s.med.expires=it.until; text=`עדכון פטור/סטטוס רפואי: ${it.text}${it.until?" (בתוקף עד "+fmtY(it.until)+")":""}`; }
       s.log.push({id:uid(),sid:it.id,t:it.t,type,text,st:"חדש",src:"soldier"}); added++;
     });
@@ -442,14 +448,19 @@ const waDoc=(title,sub,sections)=>{
 const A={
   preset:d=>{SUM={...PRESETS[+d.i][1]};render()},
   sumcopy:()=>{const b=buildSummary(); copy(waDoc(b.title,b.sub,b.sections))},
-  dailypdf:async(d,btn)=>{
-    const old=btn.textContent; btn.textContent="מכין…";
+  dailypdf:()=>openSheet({kind:"daily"}),
+  dailygo:async()=>{
+    const kh=val("d_kh").trim(), personal=val("d_personal").trim();
+    if(!kh) return toast("הזן מצב כח אדם לפני ההנפקה");
+    const t=todayStr(); S.daily=S.daily||{}; const mine=S.daily[acct]=S.daily[acct]||{};
+    mine[t]={kh,personal}; Object.keys(mine).filter(d=>daysTo(d)<-8).forEach(d=>delete mine[d]);
+    closeSheet(); toast("מכין את הדוח…");
     try{
       await api(S); // the report is built server-side from the stored state, so flush first
       const r=await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"daily",date:todayStr()})});
       if(!r.ok) throw new Error(r.status===401?"קוד שגוי":"שגיאת שרת");
       dl(await r.blob(),`daily-${todayStr()}.pdf`);
-    }catch(e){ toast("יצירת הדוח נכשלה: "+e.message); } finally{ btn.textContent=old; }
+    }catch(e){ if(e.message==="stale") return onStale(); toast("יצירת הדוח נכשלה: "+e.message); }
   },
   dailylist:async(d,btn)=>{
     const old=btn.textContent; btn.textContent="טוען…";

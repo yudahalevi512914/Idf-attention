@@ -83,7 +83,7 @@ textarea{resize:vertical;min-height:70px}
 <div class="nav-tabs">
   <button class="tab-btn active" data-tab="tab-leave">🚪 בקשת יציאה</button>
   <button class="tab-btn" data-tab="tab-medical">🏥 רפואה</button>
-  <button class="tab-btn" data-tab="tab-general">💬 פנייה כללית</button>
+  <button class="tab-btn" data-tab="tab-general">💬 פנייה</button>
 </div>
 
 <div id="tab-leave" class="tab-content active">
@@ -119,8 +119,9 @@ textarea{resize:vertical;min-height:70px}
 </div>
 
 <div id="tab-general" class="tab-content">
-  <h2>פנייה כללית למפקד</h2>
+  <h2>פנייה למפקד</h2>
   <form id="form-general">
+    <div class="form-group"><label>סוג הפנייה</label><select id="gen-cat"><option value="כללי">כללי</option><option value="ת״ש">ת״ש</option><option value="שלישות">שלישות</option></select></div>
     <div class="form-group"><label>נושא הפנייה</label><input type="text" id="gen-subject" required placeholder="נושא קצר"></div>
     <div class="form-group"><label>תוכן הפנייה</label><textarea id="gen-details" required placeholder="רשום כאן את הפירוט המלא…"></textarea></div>
     <button type="submit" class="btn-submit">שלח פנייה</button>
@@ -235,7 +236,8 @@ $("form-medical").onsubmit=e=>{ e.preventDefault();
 
 $("form-general").onsubmit=e=>{ e.preventDefault();
   const text=[`[${$("gen-subject").value.trim()}]`,$("gen-details").value.trim()].join("\n");
-  send("general",text,{},"פנייה כללית",e.target); };
+  const cat=$("gen-cat").value;
+  send("general",text,{cat},cat==="כללי"?"פנייה כללית":"פנייה: "+cat,e.target); };
 
 load(); renderSent();
 // The "now / next" marks move on their own; the schedule itself is fetched again only when
