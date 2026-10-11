@@ -24,8 +24,8 @@ export default async function handler(req, res) {
     const date = today();
     const pub = await kvGet("public");
     res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=600"); // only successful answers are cached
-    if (!pub) return res.json({ date, squad: [], items: [] });
-    return res.json({ date, squad: Array.isArray(pub.squad) ? pub.squad : [], items: pub.schedule?.[date] || [] });
+    if (!pub) return res.json({ date, squad: [], items: [], guard: null });
+    return res.json({ date, squad: Array.isArray(pub.squad) ? pub.squad : [], items: pub.schedule?.[date] || [], guard: pub.guard || null });
   } catch (e) {
     return res.status(500).json(errorJson(e));
   }

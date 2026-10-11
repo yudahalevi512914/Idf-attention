@@ -140,7 +140,7 @@ function render(){
   $("who").textContent=`מפקד ${acct}`;
   $("nav").innerHTML=[["today","🎛️","בקרה"],["sol","👥","חיילים"],["ord","📢","הוראות"],["task","✅","משימות"],["sum","📊","סיכומים"]].map(([k,i,l])=>`<button data-a="tab" data-k="${k}" class="${tab===k?"on":""}"><b>${i}</b>${l}</button>`).join("");
   if(!SQ().length||editSquad) return app.innerHTML=squadPicker();
-  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tab==="sched"?schedule():tasks();
+  app.innerHTML=tab==="today"?today():tab==="sol"?(sel?soldier(sel):soldiers()):tab==="ord"?orders():tab==="sum"?summaries():tab==="sched"?schedule():tab==="guard"?guard():tasks();
 }
 const stCls=s=>s==="חדש"||s==="חדשה"?"sun":s===WAIT?"wait":s==="אושר"?"app":["נסגר","בוצעה","הועברה למטה"].includes(s)?"ok":"";
 const schRow=s=>`<div class="srow row" style="margin-top:6px" data-id="${esc(s?.id||"")}"><input class="s_t" type="time" value="${esc(s?.t||"")}" style="flex:0 0 118px"><input class="s_x" value="${esc(s?.x||"")}" placeholder="מה קורה"><button class="x n" data-a="srowdel">✕</button></div>`;
@@ -213,7 +213,7 @@ function today(){
   const row=(txt,d)=>`<div class="item"><div class="t">${txt}</div>${d?when(d):""}</div>`;
   return `<h2>לוח בקרה</h2>
   <div class="stats"><div class="stat bad"><b>${ol.length}</b>פניות פתוחות</div><div class="stat sun"><b>${nNew}</b>חדשות</div><div class="stat"><b>${urgent.length}</b>משימות דחופות</div></div>
-  <div class="lnks"><a class="lnk" href="/#admin" target="_blank">📋 מעקב נוכחות</a><button class="sec" data-a="schedview">📅 לו״ז</button><button class="sec" data-a="cpsol">🔗 קישור לחיילים</button><button class="sec" data-a="refresh">🔄 רענן</button></div>
+  <div class="lnks"><a class="lnk" href="/#admin" target="_blank">📋 מעקב נוכחות</a><button class="sec" data-a="schedview">📅 לו״ז</button><button class="sec" data-a="guardview">🛡️ רשימת שמירה</button><button class="sec" data-a="cpsol">🔗 קישור לחיילים</button><button class="sec" data-a="refresh">🔄 רענן</button></div>
   <div class="card"><div class="chead"><h3>📨 פניות ובקשות פתוחות</h3><button class="sec" data-a="newlog">➕ פנייה חדשה</button></div>
     ${ol.length?ol.map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(l.n)}" data-id="${l.id}"><div class="t"><b>${esc(l.n)}</b> <span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span>${l.src==="soldier"?'<span class="pill">מהחייל</span>':""}<br><small>${fmt(dayOfMs(l.t))}</small> ${nl(l.text)}</div></div>`).join(""):'<div class="empty">אין פניות פתוחות 🎉</div>'}
     ${ol.length?'<button class="sec" data-a="cpopen" style="margin-top:8px">העתק רשימה לשליחה לרמ״מ</button>':""}</div>
@@ -226,6 +226,7 @@ function today(){
     <div style="margin-top:8px"><button class="sec" data-a="dailylist">📁 דוחות קודמים</button></div></div>
   <div class="card"><h3>🔥 משימות דחופות</h3>${urgent.length?urgent.map(x=>`<div class="item"><input class="chk" type="checkbox" data-a="tdone" data-id="${x.id}"><div class="t" data-a="edittask" data-id="${x.id}" style="cursor:pointer">${x.pri===0?"🔴 ":""}${esc(x.text)}</div>${x.due?when(x.due):""}</div>`).join(""):'<div class="empty">אין משימות דחופות</div>'}</div>
   <div class="card"><div class="chead"><h3>📅 הלו״ז להיום</h3><span class="row" style="gap:6px">${sch.length?`<button class="sec" data-a="cpsched" data-d="${t}">📋 העתק</button>`:""}<button class="sec" data-a="schedview">עריכה</button></span></div>${sch.length?sch.map(s=>`<div class="item"><div class="t"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div></div>`).join(""):'<div class="empty">לא הוזן לו״ז להיום. החיילים רואים אותו בדף שלהם.</div>'}</div>
+  ${guardLive()?`<div class="card"><div class="chead"><h3>🛡️ רשימת שמירה · ${esc(nightLabel(S.guard.d))}</h3><span class="row" style="gap:6px"><button class="sec" data-a="cpguard">📋 העתק</button><button class="sec" data-a="guardview">עריכה</button></span></div>${guardRows(S.guard)}</div>`:""}
   ${med.length?`<div class="card"><h3>🩺 רפואי ותורים קרובים</h3>${med.map(([n,k,d,s])=>row(`<b>${esc(n)}</b> · ${k}${s?`<br><small>${esc(s)}</small>`:""}`,d)).join("")}</div>`:""}
   ${od.length?`<div class="card"><h3>📢 הוראות שמתקרבות</h3>${od.map(x=>row(esc(x.text),x.due)).join("")}</div>`:""}
   <button data-a="cprem" class="sec" style="width:100%">📲 הכן תזכורות לטלפון</button>`;
@@ -240,6 +241,44 @@ function schedule(){
   <div class="card"><h3>הוספת פריט</h3><div class="row"><input id="s_x" placeholder="מה קורה"><input id="s_t" type="time" style="flex:0 0 120px"></div><button data-a="sadd" style="width:100%;margin-top:6px">הוסף</button></div>
   <div class="card"><div class="chead"><h3>הלו״ז ליום הזה</h3>${L.length?`<span class="row" style="gap:6px"><button class="sec" data-a="cpsched" data-d="${d}">📋 העתק</button><button class="sec" data-a="schedall">✏️ ערוך הכול</button></span>`:""}</div>
     <span class="hint">לחץ על פריט (או על "ערוך הכול") כדי לערוך שעות ותיאורים יחד. החיילים רואים את הלו״ז בדף שלהם.</span>${L.length?L.map(s=>`<div class="item"><div class="t" data-a="sedit" data-id="${s.id}" style="cursor:pointer"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div><button class="x" data-a="sdel" data-id="${s.id}">✕</button></div>`).join(""):'<div class="empty">אין פריטים ליום הזה</div>'}</div>`;
+}
+
+// ---------- guard duty list ----------
+// S.guard = { d: night's date, start, end: "HH:MM", order: [names], skip: [names],
+//             slots: [{ n, a, b }] }  a/b = minutes from midnight of d (may pass 1440)
+const hm=m=>{ m=((Math.round(m)%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); };
+const toMin=t=>{ const [h,m]=String(t||"").split(":").map(Number); return h*60+m; };
+const durTxt=m=>{ m=Math.round(m); const h=Math.floor(m/60), r=m%60; return h?(r?`${h} ש׳ ו-${r} דק׳`:(h===1?"שעה":`${h} שעות`)):`${r} דק׳`; };
+const nightLabel=d=>"ליל "+new Date(d+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+const guardPeople=()=>[...new Set([...ROSTER,...SQALL()])];
+function G(){
+  const g=S.guard||(S.guard={});
+  g.d=g.d||todayStr(); g.start=g.start||"22:00"; g.end=g.end||"06:00";
+  const all=guardPeople(); g.order=[...(g.order||[]).filter(n=>all.includes(n)),...all.filter(n=>!(g.order||[]).includes(n))];
+  g.skip=(g.skip||[]).filter(n=>all.includes(n)); g.slots=g.slots||[];
+  return g;
+}
+// minutes since midnight of date d, in Israel time
+const nowSince=d=>{ const n=new Date(), t=n.toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}), [h,m]=n.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Jerusalem"}).split(":").map(Number); return Math.round((new Date(t+"T12:00:00")-new Date(d+"T12:00:00"))/864e5)*1440+h*60+m; };
+const guardLive=()=>{ const g=S.guard; return !!(g&&g.slots&&g.slots.length&&nowSince(g.d)<g.slots[g.slots.length-1].b); };
+const guardRows=g=>{ const now=nowSince(g.d); return g.slots.map(x=>`<div class="item"><div class="t"><span class="tm">${hm(x.a)}–${hm(x.b)}</span>${esc(x.n)}</div>${now>=x.a&&now<x.b?'<span class="pill sun">עכשיו</span>':""}</div>`).join(""); };
+const waGuard=g=>{
+  const len=(g.slots[g.slots.length-1].b-g.slots[0].a)/g.slots.length;
+  return `*🛡️ רשימת שמירה · ${nightLabel(g.d)}*\n_${hm(g.slots[0].a)}–${hm(g.slots[g.slots.length-1].b)} · ${g.slots.length} שומרים · ${Number.isInteger(len)?"":"כ-"}${durTxt(len)} לכל אחד_\n${RULE}\n\n`+g.slots.map(x=>`• *${hm(x.a)}–${hm(x.b)}* – ${x.n}`).join("\n");
+};
+function guard(){
+  const g=G(), on=g.order.filter(n=>!g.skip.includes(n));
+  return `<button class="sec" data-a="back2">→ חזרה ללוח הבקרה</button><h2 style="margin-top:10px">🛡️ רשימת שמירה</h2>
+  <div class="card"><h3>זמני השמירה</h3>
+    <label>הלילה של</label><input type="date" data-g="d" value="${g.d}">
+    <div class="row" style="margin-top:6px"><div><label>התחלה</label><input type="time" data-g="start" value="${g.start}"></div><div><label>סיום</label><input type="time" data-g="end" value="${g.end}"></div></div>
+    <span class="hint">סיום מוקדם מההתחלה = למחרת בבוקר.</span></div>
+  <div class="card"><div class="chead"><h3>מי שומר (${on.length}/${g.order.length})</h3><button class="sec" data-a="gshuf">🔀 ערבב סדר</button></div>
+    <span class="hint">הורד סימון ממי שלא שומר הלילה. הסדר כאן הוא סדר השמירה.</span>
+    ${g.order.map(n=>`<label class="item" style="cursor:pointer"><input class="chk" type="checkbox" data-a="gtog" data-n="${esc(n)}" ${g.skip.includes(n)?"":"checked"}><div class="t">${esc(n)}</div></label>`).join("")}
+    <button data-a="gmake" style="width:100%;margin-top:10px">צור רשימה ופרסם לחיילים</button></div>
+  ${g.slots.length?`<div class="card"><div class="chead"><h3>${esc(nightLabel(g.d))}</h3><span class="row" style="gap:6px"><button class="sec" data-a="cpguard">📋 העתק</button><button class="sec" style="color:var(--bad)" data-a="gclear">מחק</button></span></div>
+    <span class="hint">${g.slots.length} שומרים · ${durTxt((g.slots[g.slots.length-1].b-g.slots[0].a)/g.slots.length)} לכל אחד בערך. מופיע בדף החייל.</span>${guardRows(g)}</div>`:""}`;
 }
 
 function soldiers(){
@@ -351,7 +390,8 @@ let pubTimer;
 function pub(){ clearTimeout(pubTimer); pubTimer=setTimeout(async()=>{ try{
   const keep={}; Object.keys(S.schedule).filter(d=>daysTo(d)>=-1).forEach(d=>keep[d]=S.schedule[d]);
   // skip the write when the soldiers' page already shows exactly this
-  const body=JSON.stringify({squad:SQALL(),schedule:keep}); if(lsGet("lastpub")===body) return;
+  const g=S.guard, guard=g&&g.slots&&g.slots.length?{d:g.d,slots:g.slots}:null;
+  const body=JSON.stringify({squad:SQALL(),schedule:keep,guard}); if(lsGet("lastpub")===body) return;
   const r=await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",...JSON.parse(body)})});
   if(r.ok) lsSet("lastpub",body);
 }catch(e){} },1200); }
@@ -458,6 +498,22 @@ const A={
   refresh:async()=>{ const n=await pullInbox(); toast(n?`${n} פניות חדשות מהחיילים`:"אין פניות חדשות"); render(); },
   cpsol:()=>copy(location.origin+"/soldier.html"),
   cpsched:d=>copy(waSched(d.d||SD||todayStr())),
+  guardview:()=>{tab="guard";render();scrollTo(0,0)},
+  gtog:d=>{const g=G(); g.skip=d.n&&g.skip.includes(d.n)?g.skip.filter(x=>x!==d.n):[...g.skip,d.n]; go()},
+  gshuf:()=>{const g=G(), a=g.order; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} go()},
+  gmake:()=>{
+    const g=G(), on=g.order.filter(n=>!g.skip.includes(n));
+    if(!on.length) return toast("לא נבחרו שומרים");
+    const a=toMin(g.start); let b=toMin(g.end); if(isNaN(a)||isNaN(b)) return toast("בחר שעת התחלה וסיום");
+    if(b<=a) b+=1440;
+    const len=(b-a)/on.length; if(len<1) return toast("אין מספיק זמן לכל השומרים");
+    if(g.slots.length&&!confirm("להחליף את הרשימה הקיימת?")) return;
+    // equal shares; boundaries rounded to the minute, the last one ends exactly at the end time
+    g.slots=on.map((n,i)=>({n,a:Math.round(a+i*len),b:i===on.length-1?b:Math.round(a+(i+1)*len)}));
+    go(); pub(); toast("הרשימה נוצרה ופורסמה לחיילים");
+  },
+  gclear:()=>{if(!confirm("למחוק את רשימת השמירה? היא תוסר גם מדף החייל.")) return; G().slots=[]; go(); pub()},
+  cpguard:()=>{const g=S.guard; if(g?.slots?.length) copy(waGuard(g))},
   schedview:()=>{tab="sched";SD=null;render();scrollTo(0,0)}, back2:()=>{tab="today";render()},
   sdprev:()=>{SD=shiftDay(SD||todayStr(),-1);render()}, sdnext:()=>{SD=shiftDay(SD||todayStr(),1);render()},
   sadd:()=>{const x=$("s_x").value.trim(), t=$("s_t").value; if(!x||!t) return toast("כתוב מה קורה ובחר שעה"); const d=SD||todayStr(); (S.schedule[d]=S.schedule[d]||[]).push({id:uid(),t,x}); go(); pub()},
@@ -539,6 +595,7 @@ app.addEventListener("click",onClick); $("sheet").addEventListener("click",onCli
 $("nav").addEventListener("click",e=>{const b=e.target.closest("[data-a]"); if(b) A[b.dataset.a](b.dataset)});
 app.addEventListener("change",e=>{
   if(e.target.dataset.sd){ SD=e.target.value||null; render(); return; }
+  if(e.target.dataset.g){ if(e.target.value) G()[e.target.dataset.g]=e.target.value; save(); return; }
   const k=e.target.dataset.sum; if(k){ SUM[k]=e.target.value; if(k==="src"){SUM.type="";SUM.soldier="";} render(); return; }
   const f=e.target.dataset.f; if(!f) return; const s=sd(e.target.dataset.n);
   if(f==="notes") s.notes=e.target.value; else s.med[f]=e.target.value; save();

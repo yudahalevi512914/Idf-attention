@@ -23,6 +23,8 @@ h1{font-size:1.5rem;color:var(--primary);margin-bottom:10px}
 .tag{margin-inline-start:auto;font-size:.72rem;font-weight:800;padding:2px 9px;border-radius:99px;background:var(--gold);color:#1e293b;white-space:nowrap}
 .tag.next{background:var(--border);color:var(--text)}
 .empty{color:var(--text-muted);text-align:center;padding:16px}
+.ev.me{outline:2px solid var(--gold);border-radius:10px}
+.copy-btn{display:block;width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer}
 .btn-attendance{display:block;width:100%;background:#059669;color:#fff;text-decoration:none;text-align:center;padding:14px;border-radius:12px;font-weight:bold;font-size:1.1rem;box-shadow:0 4px 12px rgba(16,185,129,.3);margin-bottom:18px}
 .btn-attendance:active{background:#047857}
 .nav-tabs{display:flex;gap:8px;margin-bottom:14px}
@@ -55,6 +57,12 @@ textarea{resize:vertical;min-height:70px}
 <section class="hero">
   <div class="hero-head"><h2>📅 הלו״ז להיום</h2><span class="date" id="sdate"></span></div>
   <div id="schedule-container"><p class="empty">טוען לו״ז…</p></div>
+</section>
+
+<section class="hero" id="guard" style="display:none">
+  <div class="hero-head"><h2>🛡️ רשימת שמירה</h2><span class="date" id="gdate"></span></div>
+  <div id="guard-container"></div>
+  <button type="button" class="copy-btn" id="gcopy">📋 העתק לווטסאפ</button>
 </section>
 
 <a href="/" class="btn-attendance">📌 למעבר ליודה נוכחות</a>
@@ -140,18 +148,35 @@ function fillNames(){
   if(name&&!list.includes(name)){ name=""; ls.set("snm",""); }
   $("need").style.display=name?"none":"block";
 }
-$("who").onchange=e=>{ name=e.target.value; ls.set("snm",name); $("need").style.display=name?"none":"block"; renderSent(); };
+$("who").onchange=e=>{ name=e.target.value; ls.set("snm",name); $("need").style.display=name?"none":"block"; renderSent(); renderGuard(); };
 
 function renderSchedule(){
   $("sdate").textContent=dlong(info.date);
   const ev=[...info.items].sort((a,b)=>a.t.localeCompare(b.t)), now=nowIL(); let cur=-1; ev.forEach((e,i)=>{ if(e.t<=now) cur=i; });
   $("schedule-container").innerHTML=ev.length?ev.map((e,i)=>`<div class="ev ${i<cur?"past":""} ${i===cur?"now":""}"><span class="t">${esc(e.t)}</span><span class="x">${esc(e.x)}</span>${i===cur?'<span class="tag">עכשיו</span>':i===cur+1?'<span class="tag next">הבא</span>':""}</div>`).join(""):'<p class="empty">עדיין לא הוזן לו״ז להיום</p>';
 }
+// ---- guard duty list: slots hold minutes from midnight of the night's date (may pass 24:00) ----
+const hm=m=>{ m=((Math.round(m)%1440)+1440)%1440; return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0"); };
+const durTxt=m=>{ m=Math.round(m); const h=Math.floor(m/60), r=m%60; return h?(r?`${h} ש׳ ו-${r} דק׳`:(h===1?"שעה":`${h} שעות`)):`${r} דק׳`; };
+const nightLabel=d=>"ליל "+new Date(d+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+const nowSince=d=>{ const n=new Date(), t=n.toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}), [h,m]=n.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Jerusalem"}).split(":").map(Number); return Math.round((new Date(t+"T12:00:00")-new Date(d+"T12:00:00"))/864e5)*1440+h*60+m; };
+function renderGuard(){
+  const g=info.guard, box=$("guard");
+  if(!g||!g.slots||!g.slots.length||nowSince(g.d)>=g.slots[g.slots.length-1].b){ box.style.display="none"; return; }
+  const now=nowSince(g.d); box.style.display="block"; $("gdate").textContent=nightLabel(g.d);
+  $("guard-container").innerHTML=g.slots.map(x=>`<div class="ev ${now>=x.b?"past":""} ${now>=x.a&&now<x.b?"now":""} ${x.n===name?"me":""}"><span class="t">${hm(x.a)}–${hm(x.b)}</span><span class="x">${esc(x.n)}</span>${now>=x.a&&now<x.b?'<span class="tag">עכשיו</span>':x.n===name?'<span class="tag next">אתה</span>':""}</div>`).join("");
+}
+$("gcopy").onclick=()=>{
+  const g=info.guard; if(!g?.slots?.length) return;
+  const L=g.slots, len=(L[L.length-1].b-L[0].a)/L.length;
+  const t=`*🛡️ רשימת שמירה · ${nightLabel(g.d)}*\n_${hm(L[0].a)}–${hm(L[L.length-1].b)} · ${L.length} שומרים · ${Number.isInteger(len)?"":"כ-"}${durTxt(len)} לכל אחד_\n➖➖➖➖➖➖➖➖\n\n`+L.map(x=>`• *${hm(x.a)}–${hm(x.b)}* – ${x.n}`).join("\n");
+  navigator.clipboard.writeText(t).then(()=>showAlert("הרשימה הועתקה"),()=>showAlert("ההעתקה נכשלה",false));
+};
 let lastLoad=0;
 async function load(){
   lastLoad=Date.now();
   try{ const r=await fetch("/api/soldier"); if(r.ok) info=await r.json(); }catch(e){}
-  fillNames(); renderSchedule();
+  fillNames(); renderSchedule(); renderGuard();
 }
 
 function renderSent(){
@@ -199,7 +224,7 @@ $("form-general").onsubmit=e=>{ e.preventDefault();
 load(); renderSent();
 // The "now / next" marks move on their own; the schedule itself is fetched again only when
 // the page comes back to the screen after 10 minutes, so open phones don't keep the database awake.
-setInterval(()=>{ if(!document.hidden) renderSchedule(); },60000);
+setInterval(()=>{ if(!document.hidden){ renderSchedule(); renderGuard(); } },60000);
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&Date.now()-lastLoad>600000) load(); });
 </script>
 </body>

@@ -259,7 +259,11 @@ export default async function handler(req, res) {
       return res.json({ ok: true, deleted: r.length });
     }
     if (req.method === "POST" && req.body?.action === "publish") {
-      const pub = { squad: (req.body.squad || []).slice(0, 60).map(s => String(s).slice(0, 60)), schedule: req.body.schedule || {} };
+      const g = req.body.guard;
+      const guard = g && /^\d{4}-\d{2}-\d{2}$/.test(g.d || "") && Array.isArray(g.slots)
+        ? { d: g.d, slots: g.slots.slice(0, 100).map(x => ({ n: String(x?.n ?? "").slice(0, 60), a: Math.round(+x?.a || 0), b: Math.round(+x?.b || 0) })) }
+        : null;
+      const pub = { squad: (req.body.squad || []).slice(0, 60).map(s => String(s).slice(0, 60)), schedule: req.body.schedule || {}, guard };
       if (JSON.stringify(pub).length > 100000) return res.status(413).json({ error: "too big" });
       await kvSet("public", pub);
       return res.json({ ok: true });
