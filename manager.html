@@ -65,7 +65,7 @@ a.lnk{display:inline-block;text-decoration:none;font-weight:600;border:2px solid
 <script>
 const ROSTER=["נבו היימן","יואב תומר","ג׳ק בן חורין","גלעד ניאזוב","ניב ג׳רבי","ארז נבון","יהודה הלוי","איתי זיו","יהלי בנישו","עידן גבאי","מיכאל מנור","תומר אמתי","דניאל ריינס","לירוי חולודנקו","עמית דרוקר","ינון רותם פלד","רואי חזן","יותם רוטשילד","אור בהט","ארבל יצחקי","גור סלע","יהונתן הררי","עומר רז","מתן ענבי","ליאור סלבין","רואי טרייבנד","אילאי גירסטין"];
 const TYPES=["בקשה","בקשת יציאה","פנייה","טענה","רפואי","הערה"], LST=["חדש","ממתין לתשובה מרמ״מ","אושר","נסגר"], OST=["חדשה","הועברה למטה","בוצעה"];
-const EVK=["בטיחות","משמעת","פער כוננות"], EVI={"בטיחות":"🦺","משמעת":"⚖️","פער כוננות":"🎯"}, WAIT="ממתין לתשובה מרמ״מ";
+const EVK=["בטיחות","משמעת","פער כוננות","פער בכח אדם"], EVI={"בטיחות":"🦺","משמעת":"⚖️","פער כוננות":"🎯","פער בכח אדם":"👥"}, WAIT="ממתין לתשובה מרמ״מ";
 let S, pin="", tab="today", sel=null, editSquad=false, timer, SH=null, acct=1, accts=4;
 const SQ=()=>S.squads[acct]||(S.squads[acct]=[]);                 // the soldiers this account tracks
 const SQALL=()=>[...new Set(Object.values(S.squads||{}).flat())];  // everyone tracked by anyone
@@ -166,7 +166,7 @@ function renderSheet(){
   } else if(SH.kind==="event"){
     const e=SH.id?(S.events||[]).find(x=>x.id===SH.id):null;
     b=`<h3>${e?"עריכת אירוע":"אירוע חדש"}</h3>
-    <label>חייל</label><select id="e_n">${SQ().map(n=>`<option ${n===(e?.n??SH.n)?"selected":""}>${esc(n)}</option>`).join("")}</select>
+    <label>חייל</label><select id="e_n"><option value="" ${e&&!e.n?"selected":""}>— כללי, לא חייל מסוים —</option>${SQ().map(n=>`<option ${n===(e?.n??SH.n)?"selected":""}>${esc(n)}</option>`).join("")}</select>
     <label>סוג האירוע</label><select id="e_kind">${EVK.map(k=>`<option value="${esc(k)}" ${k===(e?.kind??"משמעת")?"selected":""}>${EVI[k]} ${k}</option>`).join("")}</select>
     <label>מה קרה</label><textarea id="e_text" placeholder="תיאור קצר ועובדתי">${esc(e?.text||"")}</textarea>
     <div class="row" style="margin-top:8px"><button data-a="shsave">שמור</button>${e?'<button class="sec" style="color:var(--bad)" data-a="shdel">מחק</button>':""}</div>`;
@@ -202,7 +202,8 @@ function squadPicker(){
 }
 function openLog(){ const o=[]; SQ().forEach(n=>sd(n).log.forEach(l=>{ if(isOpen(l.st)) o.push({n,...l}); })); return o.sort((a,b)=>(a.st==="חדש"?0:1)-(b.st==="חדש"?0:1)||a.t-b.t); }
 const hhmm=t=>new Date(t).toLocaleTimeString("he-IL",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Jerusalem"});
-function todayEvents(){ const t=todayStr(), mine=new Set(SQ()); return (S.events||[]).filter(e=>dayOfMs(e.t)===t&&mine.has(e.n)).sort((a,b)=>a.t-b.t); }
+// a general event (no soldier) belongs to the account that logged it
+function todayEvents(){ const t=todayStr(), mine=new Set(SQ()); return (S.events||[]).filter(e=>dayOfMs(e.t)===t&&(e.n?mine.has(e.n):e.a===acct)).sort((a,b)=>a.t-b.t); }
 function today(){
   const t=todayStr(), ol=openLog(), nNew=ol.filter(l=>l.st==="חדש").length;
   const urgent=S.tasks.filter(x=>!x.done&&(x.pri===0||(x.due&&daysTo(x.due)<=0)));
@@ -218,8 +219,8 @@ function today(){
     ${ol.length?ol.map(l=>`<div class="item tap" data-a="editlog" data-n="${esc(l.n)}" data-id="${l.id}"><div class="t"><b>${esc(l.n)}</b> <span class="pill">${esc(l.type)}</span><span class="pill ${stCls(l.st)}">${esc(l.st)}</span>${l.src==="soldier"?'<span class="pill">מהחייל</span>':""}<br><small>${fmt(dayOfMs(l.t))}</small> ${nl(l.text)}</div></div>`).join(""):'<div class="empty">אין פניות פתוחות 🎉</div>'}
     ${ol.length?'<button class="sec" data-a="cpopen" style="margin-top:8px">העתק רשימה לשליחה לרמ״מ</button>':""}</div>
   <div class="card"><div class="chead"><h3>⚠️ אירועי היום</h3><button class="sec" data-a="newev">➕ אירוע</button></div>
-    <span class="hint">בטיחות, משמעת ופערי כוננות. נכנסים לדוח היומי ונמחקים בסוף היום.</span>
-    ${ev.length?ev.map(e=>`<div class="item tap" data-a="editev" data-id="${e.id}"><div class="t"><b>${esc(e.n)}</b> <span class="pill ${e.kind==="בטיחות"?"bad":e.kind==="פער כוננות"?"sun":""}">${EVI[e.kind]||""} ${esc(e.kind)}</span><br><small>${esc(hhmm(e.t))}</small> ${nl(e.text)}</div></div>`).join(""):'<div class="empty">אין אירועים היום</div>'}
+    <span class="hint">בטיחות, משמעת, פערי כוננות ופערים בכח אדם. נכנסים לדוח היומי ונמחקים בסוף היום.</span>
+    ${ev.length?ev.map(e=>`<div class="item tap" data-a="editev" data-id="${e.id}"><div class="t"><b>${esc(e.n||"כללי")}</b> <span class="pill ${e.kind==="בטיחות"?"bad":e.kind==="פער כוננות"||e.kind==="פער בכח אדם"?"sun":""}">${EVI[e.kind]||""} ${esc(e.kind)}</span><br><small>${esc(hhmm(e.t))}</small> ${nl(e.text)}</div></div>`).join(""):'<div class="empty">אין אירועים היום</div>'}
     ${ev.length?'<button class="sec" data-a="cpev" style="margin-top:8px">העתק אירועים</button>':""}</div>
   <div class="card"><div class="chead"><h3>📄 דוח יומי</h3><button class="sec" data-a="dailypdf">הנפק עכשיו</button></div>
     <span class="hint">אירועי היום + פניות שנפתחו היום + כל מה שעדיין ממתין להחלטת רמ״מ. מונפק אוטומטית בלילה.</span>
@@ -525,7 +526,7 @@ const A={
   srowdel:(d,el)=>el.closest(".srow").remove(),
   newev:()=>{ if(!SQ().length) return toast("קודם הגדר את הכיתה"); openSheet({kind:"event",n:SQ()[0]}) },
   editev:d=>openSheet({kind:"event",id:d.id}),
-  cpev:()=>{const ev=todayEvents(); copy(waBlock("אירועי בטיחות, משמעת ופערי כוננות",ev.map(e=>waItem(e.n,`${e.kind} · ${hhmm(e.t)}`,e.text)),`${fmt(todayStr())} · ${plur(ev.length,"אירוע אחד","אירועים")}`))},
+  cpev:()=>{const ev=todayEvents(); copy(waBlock("אירועי היום",ev.map(e=>waItem(e.n||"כללי",`${e.kind} · ${hhmm(e.t)}`,e.text)),`${fmt(todayStr())} · ${plur(ev.length,"אירוע אחד","אירועים")}`))},
   sdcopy:()=>{const k=SD||todayStr(), src=S.schedule[shiftDay(k,-1)]||[]; if(!src.length) return toast("אין לו״ז ביום הקודם"); if((S.schedule[k]||[]).length&&!confirm("להוסיף לפריטים הקיימים?")) return; S.schedule[k]=[...(S.schedule[k]||[]),...src.map(s=>({...s,id:uid()}))]; go(); pub()},
   addord:()=>{const x=$("ox").value.trim(); if(!x) return toast("כתוב את ההוראה"); S.orders.push({id:uid(),text:x,from:$("of").value.trim(),due:$("od").value,st:"חדשה"}); go()},
   addtask:()=>{const x=$("tx").value.trim(); if(!x) return toast("כתוב משימה"); S.tasks.push({id:uid(),text:x,due:$("td").value,rem:$("tr").value,pri:+$("tp").value,done:false}); go()},
@@ -543,7 +544,7 @@ const A={
 function shSave(){
   if(SH.kind==="event"){
     const x=val("e_text").trim(); if(!x) return toast("כתוב מה קרה");
-    const f={n:val("e_n"),kind:val("e_kind"),text:x};
+    const f={n:val("e_n"),kind:val("e_kind"),text:x,a:acct};
     const e=SH.id?(S.events||[]).find(v=>v.id===SH.id):null;
     if(e) Object.assign(e,f); else (S.events=S.events||[]).push({id:uid(),t:Date.now(),...f});
     return;

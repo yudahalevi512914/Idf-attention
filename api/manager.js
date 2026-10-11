@@ -145,40 +145,37 @@ export function buildDailyDoc(data, date, acct = 1) {
   const soldiers = S.soldiers || {};
 
   const events = (Array.isArray(S.events) ? S.events : [])
-    .filter(e => dayOfMs(e.t) === date && inSquad.has(e.n)).sort((a, b) => a.t - b.t);
+    .filter(e => dayOfMs(e.t) === date && (e.n ? inSquad.has(e.n) : e.a === acct)).sort((a, b) => a.t - b.t);
 
-  // anything not closed stays on the report, whatever its status
-  const todayLogs = [], waiting = [];
+  // every request that is not closed, whatever its status or the day it was opened,
+  // split into medical, exit requests and everything else
+  const open = [];
   squad.forEach(n => ((soldiers[n] || {}).log || []).forEach(l => {
-    const row = { n, l };
-    if (dayOfMs(l.t) === date) todayLogs.push(row);
-    else if (dayOfMs(l.t) < date && isOpenSt(l.st)) waiting.push(row);
+    if (isOpenSt(l.st) && dayOfMs(l.t) <= date) open.push({ n, l });
   }));
-  const byTime = (a, b) => a.l.t - b.l.t;
-  todayLogs.sort(byTime); waiting.sort(byTime);
-
-  const logCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6 }];
-  const logRow = ({ n, l }) => [n, l.type || "", hhmm(l.t), l.st || "", oneLine(l.text)];
-  const waitCols = [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "נפתח", w: 1.5 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6 }];
+  open.sort((a, b) => a.l.t - b.l.t);
+  const groupOf = l => (l.type === "רפואי" ? "med" : l.type === "בקשת יציאה" ? "exit" : "other");
+  const opened = l => (dayOfMs(l.t) === date ? `היום ${hhmm(l.t)}` : dmy(dayOfMs(l.t)));
+  const reqCols = [{ h: "חייל", w: 2.4 }, { h: "נפתח", w: 1.7 }, { h: "סטטוס", w: 2.2 }, { h: "פירוט", w: 6.5 }];
+  const reqRows = g => open.filter(x => groupOf(x.l) === g).map(({ n, l }) => [n, opened(l), l.st || "", oneLine(l.text)]);
+  const otherCols = [{ h: "חייל", w: 2.2 }, { h: "סוג", w: 1.6 }, { h: "נפתח", w: 1.6 }, { h: "סטטוס", w: 2 }, { h: "פירוט", w: 5.6 }];
+  const otherRows = open.filter(x => groupOf(x.l) === "other").map(({ n, l }) => [n, l.type || "", opened(l), l.st || "", oneLine(l.text)]);
 
   const tables = [
     {
-      heading: "אירועי בטיחות, משמעת ופערי כוננות",
+      heading: "אירועי היום",
       cols: [{ h: "חייל", w: 2.4 }, { h: "סוג", w: 2 }, { h: "שעה", w: 1.2 }, { h: "פירוט", w: 6 }],
-      rows: events.map(e => [e.n || "", e.kind || "", hhmm(e.t), oneLine(e.text)]),
+      rows: events.map(e => [e.n || "כללי", e.kind || "", hhmm(e.t), oneLine(e.text)]),
     },
-    { heading: "פניות ובקשות שנפתחו היום", cols: logCols, rows: todayLogs.map(logRow) },
-    {
-      heading: "פניות פתוחות מימים קודמים",
-      cols: waitCols,
-      rows: waiting.map(({ n, l }) => [n, l.type || "", dmy(dayOfMs(l.t)), l.st || "", oneLine(l.text)]),
-    },
+    { heading: "רפואה", cols: reqCols, rows: reqRows("med") },
+    { heading: "בקשות יציאה", cols: reqCols, rows: reqRows("exit") },
+    { heading: "בקשות ופניות אחרות", cols: otherCols, rows: otherRows },
   ];
 
-  const open = squad.reduce((a, n) => a + ((soldiers[n] || {}).log || []).filter(l => isOpenSt(l.st)).length, 0);
+  const newToday = open.filter(x => dayOfMs(x.l.t) === date).length;
   return {
     title: "דוח יומי – לוח מפקד",
-    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(todayLogs.length, "פנייה חדשה אחת", "פניות חדשות")} · ${plur(waiting.length, "פנייה פתוחה אחת מימים קודמים", "פתוחות מימים קודמים")} · ${open} פתוחות בסך הכל`,
+    sub: `${dayLabel(date)} · ${plur(events.length, "אירוע אחד", "אירועים")} · ${plur(open.length, "בקשה פתוחה אחת", "בקשות פתוחות")}, מהן ${newToday} מהיום`,
     tables,
   };
 }
