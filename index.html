@@ -36,6 +36,7 @@ button.sec{background:transparent;color:var(--ink);border:2px solid var(--line);
 .hint{margin:16px 0 0;font-weight:600}
 .danger{color:var(--bad);border-color:var(--bad);margin-top:6px;width:100%}
 .rm{padding:4px 10px;font-size:13px;margin-inline-start:10px}
+.mk{padding:4px 10px;font-size:13px}
 .rsn{width:48%;font-size:14px;padding:6px 9px;margin:0;border-radius:10px}
 .msg{color:var(--bad);margin-top:10px;min-height:20px;font-weight:600}
 .stats{display:flex;gap:12px;margin:18px 0}
@@ -229,7 +230,7 @@ async function admin(){
   <div class="stats"><div class="stat ok"><b>${here.length}</b>הגיעו</div><div class="stat bad"><b>${ROSTER.length?missing.length:"–"}</b>חסרים</div></div>
   <div class="card">
     <h3>✅ נוכחים</h3><ul>${here.map((h,i)=>`<li><span>${esc(h.name)}</span><span><small>${time(h.t)}</small><button class="sec rm" data-i="${i}">הסר</button></span></li>`).join("")||"<li>עדיין אף אחד 😴</li>"}</ul>
-    ${ROSTER.length?`<h3>❌ חסרים <span class="hint" style="font-weight:400">(הסבר, ו-📅 לנעדר כל היום)</span></h3><datalist id="rl">${[...new Set([...COMMON,...Object.values(RS()),...Object.values(AD())])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist><ul>${missing.map(m=>`<li><span>${esc(m)}${ad[m]?`<br><small class="allday">📅 כל היום · ${esc(ad[m])}</small>`:""}</span><span style="display:flex;gap:6px;align-items:center"><input class="rsn" data-n="${esc(m)}" list="rl" placeholder="הסבר" value="${esc(reasonOf(m))}"><button class="sec rm ${ad[m]?"on":""}" data-ad="${esc(m)}" title="נעדר כל היום">📅</button></span></li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
+    ${ROSTER.length?`<h3>❌ חסרים <span class="hint" style="font-weight:400">(הסבר, ו-📅 לנעדר כל היום)</span></h3><datalist id="rl">${[...new Set([...COMMON,...Object.values(RS()),...Object.values(AD())])].map(x=>`<option value="${esc(x)}">`).join("")}</datalist><ul>${missing.map(m=>`<li><span>${esc(m)}${ad[m]?`<br><small class="allday">📅 כל היום · ${esc(ad[m])}</small>`:""}</span><span style="display:flex;gap:6px;align-items:center"><input class="rsn" data-n="${esc(m)}" list="rl" placeholder="הסבר" value="${esc(reasonOf(m))}"><button class="sec mk" data-mk="${esc(m)}" title="סמן כנוכח">✅</button><button class="sec rm ${ad[m]?"on":""}" data-ad="${esc(m)}" title="נעדר כל היום">📅</button></span></li>`).join("")||"<li>כולם הגיעו 🎉</li>"}</ul>`:""}
     ${extra.length&&ROSTER.length?`<h3>❓ לא ברשימה</h3><ul>${extra.map(h=>`<li>${esc(h.name)}</li>`).join("")}</ul>`:""}
     <button class="sec danger" id="rs">💾 סיים פעילות ואפס</button>
   </div>`;
@@ -237,6 +238,10 @@ async function admin(){
   document.querySelectorAll(".rm").forEach(b=>b.onclick=async()=>{
     const n=here[b.dataset.i].name; if(!confirm(`להסיר את ${n} מהרשימה? המכשיר שלו יוכל לדווח שוב.`)) return;
     try{ await jcall("",{action:"remove",pin,name:n}); admin(); }catch(e){ alert(e.message); }
+  });
+  document.querySelectorAll("[data-mk]").forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{ await jcall("",{action:"mark",pin,name:b.dataset.mk}); admin(); }catch(e){ b.disabled=false; alert(e.message); }
   });
   document.getElementById("sv").onclick=async()=>{ try{ await jcall("",{action:"activity",pin,activity:document.getElementById("act").value}); admin(); }catch(e){ alert(e.message); } };
   document.querySelectorAll(".rsn").forEach(i=>i.oninput=()=>{ const o=RS(); if(i.value.trim()) o[i.dataset.n]=i.value.trim(); else delete o[i.dataset.n]; saveRS(o); });

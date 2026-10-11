@@ -229,11 +229,18 @@ export default async function handler(req, res) {
   try {
     if (req.method === "POST") {
       const b = req.body || {};
-      if (b.action === "activity" || b.action === "reset" || b.action === "remove") {
+      if (b.action === "activity" || b.action === "reset" || b.action === "remove" || b.action === "mark") {
         if (!okPin(b.pin)) return res.status(401).json({ error: "unauthorized" });
         if (b.action === "remove") {
           const n = norm(b.name);
           await tx([[`delete from att_list where name = $1`, [n]], [`delete from att_dev where name = $1`, [n]]]);
+          return res.json({ ok: true });
+        }
+        // commander marks a soldier present by hand (no device involved)
+        if (b.action === "mark") {
+          const n = norm(b.name);
+          if (n.length < 2 || n.length > 60) return res.status(400).json({ error: "bad name" });
+          await q(`insert into att_list (name, t) values ($1, $2) on conflict (name) do nothing`, [n, Date.now()]);
           return res.json({ ok: true });
         }
         if (b.action === "activity") {

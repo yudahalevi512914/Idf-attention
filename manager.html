@@ -221,7 +221,7 @@ function today(){
     <span class="hint">אירועי היום + פניות שנפתחו היום + כל מה שעדיין ממתין להחלטת רמ״מ. מונפק אוטומטית בלילה.</span>
     <div style="margin-top:8px"><button class="sec" data-a="dailylist">📁 דוחות קודמים</button></div></div>
   <div class="card"><h3>🔥 משימות דחופות</h3>${urgent.length?urgent.map(x=>`<div class="item"><input class="chk" type="checkbox" data-a="tdone" data-id="${x.id}"><div class="t" data-a="edittask" data-id="${x.id}" style="cursor:pointer">${x.pri===0?"🔴 ":""}${esc(x.text)}</div>${x.due?when(x.due):""}</div>`).join(""):'<div class="empty">אין משימות דחופות</div>'}</div>
-  <div class="card"><div class="chead"><h3>📅 הלו״ז להיום</h3><button class="sec" data-a="schedview">עריכה</button></div>${sch.length?sch.map(s=>`<div class="item"><div class="t"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div></div>`).join(""):'<div class="empty">לא הוזן לו״ז להיום. החיילים רואים אותו בדף שלהם.</div>'}</div>
+  <div class="card"><div class="chead"><h3>📅 הלו״ז להיום</h3><span class="row" style="gap:6px">${sch.length?`<button class="sec" data-a="cpsched" data-d="${t}">📋 העתק</button>`:""}<button class="sec" data-a="schedview">עריכה</button></span></div>${sch.length?sch.map(s=>`<div class="item"><div class="t"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div></div>`).join(""):'<div class="empty">לא הוזן לו״ז להיום. החיילים רואים אותו בדף שלהם.</div>'}</div>
   ${med.length?`<div class="card"><h3>🩺 רפואי ותורים קרובים</h3>${med.map(([n,k,d,s])=>row(`<b>${esc(n)}</b> · ${k}${s?`<br><small>${esc(s)}</small>`:""}`,d)).join("")}</div>`:""}
   ${od.length?`<div class="card"><h3>📢 הוראות שמתקרבות</h3>${od.map(x=>row(esc(x.text),x.due)).join("")}</div>`:""}
   <button data-a="cprem" class="sec" style="width:100%">📲 הכן תזכורות לטלפון</button>`;
@@ -234,7 +234,7 @@ function schedule(){
   <div class="card"><div class="row"><button class="sec n" data-a="sdnext">›</button><input type="date" data-sd="1" value="${d}"><button class="sec n" data-a="sdprev">‹</button></div>
     <button class="sec" data-a="sdcopy" style="width:100%;margin-top:8px">העתק מהיום הקודם</button></div>
   <div class="card"><h3>הוספת פריט</h3><div class="row"><input id="s_x" placeholder="מה קורה"><input id="s_t" type="time" style="flex:0 0 120px"></div><button data-a="sadd" style="width:100%;margin-top:6px">הוסף</button></div>
-  <div class="card"><div class="chead"><h3>הלו״ז ליום הזה</h3>${L.length?'<button class="sec" data-a="schedall">✏️ ערוך הכול</button>':""}</div>
+  <div class="card"><div class="chead"><h3>הלו״ז ליום הזה</h3>${L.length?`<span class="row" style="gap:6px"><button class="sec" data-a="cpsched" data-d="${d}">📋 העתק</button><button class="sec" data-a="schedall">✏️ ערוך הכול</button></span>`:""}</div>
     <span class="hint">לחץ על פריט (או על "ערוך הכול") כדי לערוך שעות ותיאורים יחד. החיילים רואים את הלו״ז בדף שלהם.</span>${L.length?L.map(s=>`<div class="item"><div class="t" data-a="sedit" data-id="${s.id}" style="cursor:pointer"><span class="tm">${esc(s.t)}</span>${esc(s.x)}</div><button class="x" data-a="sdel" data-id="${s.id}">✕</button></div>`).join(""):'<div class="empty">אין פריטים ליום הזה</div>'}</div>`;
 }
 
@@ -375,6 +375,12 @@ const RULE="➖➖➖➖➖➖➖➖";
 const plur=(n,one,many)=>n===1?one:`${n} ${many}`;
 const waItem=(head,sub,body)=>["• *"+head+"*"+(sub?" · "+sub:""),...String(body||"").split(/\n/).map(s=>s.trim()).filter(Boolean)].join("\n");
 const waBlock=(title,items,sub)=>`*${title}*${sub?`\n_${sub}_`:""}\n${RULE}\n\n`+(items.length?items.join("\n\n"):"אין פריטים.");
+// Schedule as one bullet per item, sorted by time, under a bold date header.
+const waSched=d=>{
+  const L=(S.schedule[d]||[]).slice().sort((a,b)=>a.t.localeCompare(b.t));
+  const day=new Date(d+"T12:00:00").toLocaleDateString("he-IL",{weekday:"long",day:"numeric",month:"numeric"});
+  return `*לו״ז ${day}*\n${RULE}\n\n`+L.map(x=>`• *${x.t}* – ${String(x.x).replace(/\s*\n\s*/g," ")}`).join("\n");
+};
 const waDoc=(title,sub,sections)=>{
   const out=[`*${title}*`]; if(sub) out.push(`_${sub}_`); out.push(RULE);
   sections.filter(s=>s.items.length).forEach(s=>{ out.push("",`*${s.heading}* (${s.items.length})`,"",s.items.join("\n\n")); });
@@ -442,6 +448,7 @@ const A={
   newlog:()=>openSheet({kind:"newlog"}),
   refresh:async()=>{ const n=await pullInbox(); toast(n?`${n} פניות חדשות מהחיילים`:"אין פניות חדשות"); render(); },
   cpsol:()=>copy(location.origin+"/soldier.html"),
+  cpsched:d=>copy(waSched(d.d||SD||todayStr())),
   schedview:()=>{tab="sched";SD=null;render();scrollTo(0,0)}, back2:()=>{tab="today";render()},
   sdprev:()=>{SD=shiftDay(SD||todayStr(),-1);render()}, sdnext:()=>{SD=shiftDay(SD||todayStr(),1);render()},
   sadd:()=>{const x=$("s_x").value.trim(), t=$("s_t").value; if(!x||!t) return toast("כתוב מה קורה ובחר שעה"); const d=SD||todayStr(); (S.schedule[d]=S.schedule[d]||[]).push({id:uid(),t,x}); go(); pub()},

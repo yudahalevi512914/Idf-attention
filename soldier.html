@@ -134,7 +134,8 @@ function showAlert(msg,ok=true){
   a.scrollIntoView?.({behavior:"smooth",block:"center"}); setTimeout(()=>{a.style.display="none"},4500);
 }
 function fillNames(){
-  const list=info.squad.length?info.squad:ROSTER, sel=$("who");
+  // everyone on the roster can send a request, tracked by a commander or not
+  const list=[...new Set([...ROSTER,...info.squad])], sel=$("who");
   sel.innerHTML='<option value="">מי אתה? בחר שם…</option>'+list.map(n=>`<option ${n===name?"selected":""}>${esc(n)}</option>`).join("");
   if(name&&!list.includes(name)){ name=""; ls.set("snm",""); }
   $("need").style.display=name?"none":"block";
