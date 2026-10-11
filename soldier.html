@@ -24,6 +24,13 @@ h1{font-size:1.5rem;color:var(--primary);margin-bottom:10px}
 .tag.next{background:var(--border);color:var(--text)}
 .empty{color:var(--text-muted);text-align:center;padding:16px}
 .ev.me{outline:2px solid var(--gold);border-radius:10px}
+.guard-link{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--card-bg);border:1px solid var(--border);border-inline-start:4px solid var(--gold);border-radius:12px;padding:12px 14px;margin-bottom:16px;color:var(--text);text-decoration:none}
+.guard-link small{color:var(--text-muted)}.guard-link .go{font-size:1.4rem;color:var(--gold)}
+.back{display:inline-block;color:var(--text-muted);text-decoration:none;margin-bottom:10px;font-size:.9rem}
+/* the guard list opens as its own page (#guard) instead of filling the main one */
+#guard-page{display:none}
+body.gview>*:not(#guard-page):not(#alert-msg):not(script){display:none!important}
+body.gview #guard-page{display:block}
 .copy-btn{display:block;width:100%;margin-top:10px;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;cursor:pointer}
 .btn-attendance{display:block;width:100%;background:#059669;color:#fff;text-decoration:none;text-align:center;padding:14px;border-radius:12px;font-weight:bold;font-size:1.1rem;box-shadow:0 4px 12px rgba(16,185,129,.3);margin-bottom:18px}
 .btn-attendance:active{background:#047857}
@@ -59,8 +66,11 @@ textarea{resize:vertical;min-height:70px}
   <div id="schedule-container"><p class="empty">טוען לו״ז…</p></div>
 </section>
 
-<section class="hero" id="guard" style="display:none">
-  <div class="hero-head"><h2>🛡️ רשימת שמירה</h2><span class="date" id="gdate"></span></div>
+<a href="#guard" class="guard-link" id="guard" style="display:none"><span>🛡️ <b>רשימת שמירה</b> · <span id="gdate"></span><br><small id="gmine"></small></span><span class="go">‹</span></a>
+
+<section class="hero" id="guard-page">
+  <a href="#" class="back">→ חזרה</a>
+  <div class="hero-head"><h2>🛡️ רשימת שמירה</h2><span class="date" id="gdate2"></span></div>
   <div id="guard-container"></div>
   <button type="button" class="copy-btn" id="gcopy">📋 העתק לווטסאפ</button>
 </section>
@@ -162,8 +172,13 @@ const nightLabel=d=>"ליל "+new Date(d+"T12:00:00").toLocaleDateString("he-IL"
 const nowSince=d=>{ const n=new Date(), t=n.toLocaleDateString("en-CA",{timeZone:"Asia/Jerusalem"}), [h,m]=n.toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Jerusalem"}).split(":").map(Number); return Math.round((new Date(t+"T12:00:00")-new Date(d+"T12:00:00"))/864e5)*1440+h*60+m; };
 function renderGuard(){
   const g=info.guard, box=$("guard");
-  if(!g||!g.slots||!g.slots.length||nowSince(g.d)>=g.slots[g.slots.length-1].b){ box.style.display="none"; return; }
-  const now=nowSince(g.d); box.style.display="block"; $("gdate").textContent=nightLabel(g.d);
+  const live=!!(g&&g.slots&&g.slots.length&&nowSince(g.d)<g.slots[g.slots.length-1].b);
+  document.body.classList.toggle("gview",location.hash==="#guard");
+  if(!live){ box.style.display="none"; $("guard-container").innerHTML='<p class="empty">אין כרגע רשימת שמירה</p>'; $("gcopy").style.display="none"; $("gdate2").textContent=""; return; }
+  const now=nowSince(g.d), mine=g.slots.find(x=>x.n===name), cur=g.slots.find(x=>now>=x.a&&now<x.b);
+  box.style.display="flex"; $("gcopy").style.display="block";
+  $("gdate").textContent=$("gdate2").textContent=nightLabel(g.d);
+  $("gmine").textContent=mine?`המשמרת שלך: ${hm(mine.a)}–${hm(mine.b)}`:cur?`עכשיו: ${cur.n}`:`${hm(g.slots[0].a)}–${hm(g.slots[g.slots.length-1].b)} · ${g.slots.length} שומרים`;
   $("guard-container").innerHTML=g.slots.map(x=>`<div class="ev ${now>=x.b?"past":""} ${now>=x.a&&now<x.b?"now":""} ${x.n===name?"me":""}"><span class="t">${hm(x.a)}–${hm(x.b)}</span><span class="x">${esc(x.n)}</span>${now>=x.a&&now<x.b?'<span class="tag">עכשיו</span>':x.n===name?'<span class="tag next">אתה</span>':""}</div>`).join("");
 }
 $("gcopy").onclick=()=>{
@@ -172,6 +187,7 @@ $("gcopy").onclick=()=>{
   const t=`*🛡️ רשימת שמירה · ${nightLabel(g.d)}*\n_${hm(L[0].a)}–${hm(L[L.length-1].b)} · ${L.length} שומרים · ${Number.isInteger(len)?"":"כ-"}${durTxt(len)} לכל אחד_\n➖➖➖➖➖➖➖➖\n\n`+L.map(x=>`• *${hm(x.a)}–${hm(x.b)}* – ${x.n}`).join("\n");
   navigator.clipboard.writeText(t).then(()=>showAlert("הרשימה הועתקה"),()=>showAlert("ההעתקה נכשלה",false));
 };
+window.addEventListener("hashchange",()=>{ renderGuard(); scrollTo(0,0); });
 let lastLoad=0;
 async function load(){
   lastLoad=Date.now();
