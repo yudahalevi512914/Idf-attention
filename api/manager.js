@@ -1,29 +1,19 @@
-import { put, list, del } from "@vercel/blob";
 import PDFDocument from "pdfkit";
+import { q, kvGet, kvSet, putFinal, listFinals, getFinal, pruneFinals, errorJson } from "./_db.js";
 
-const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
 // One PIN per commander account. All four share the same data; only the tracked squad differs.
 // Override in production with MANAGER_PINS="a,b,c,d" rather than relying on these defaults.
 const PINS = (process.env.MANAGER_PINS || process.env.MANAGER_PIN || "5361,5362,5363,5364").split(",").map(s => s.trim()).filter(Boolean);
 const acctOf = pin => { const i = PINS.indexOf(String(pin ?? "")); return i < 0 ? 0 : i + 1; };
 const ACCTS = PINS.length;
-const P = "manager/data/";
-const FINAL = "manager/final/";
 const KEEP_DAYS = 7;
 
-async function putAny(path, body, contentType = "application/json") {
-  const o = { token, addRandomSuffix: false, allowOverwrite: true, contentType };
-  try { return await put(path, body, { ...o, access: "public" }); }
-  catch (e) { if (!/private/i.test(String(e?.message))) throw e; return put(path, body, { ...o, access: "private" }); }
-}
-
-async function listAll(prefix) {
-  const out = []; let cursor;
-  do {
-    const r = await list({ prefix, limit: 1000, cursor, token });
-    out.push(...r.blobs); cursor = r.hasMore ? r.cursor : undefined;
-  } while (cursor);
-  return out;
+// Writes the shared state only if nobody else has saved since `curRev`; returns false when stale.
+async function writeState(next, curRev) {
+  const r = await q(`insert into kv (k, v) values ('manager', $1::jsonb)
+    on conflict (k) do update set v = excluded.v, updated = now()
+    where coalesce((kv.v->>'rev')::int, 0) = $2 returning k`, [JSON.stringify(next), curRev]);
+  return r.length > 0;
 }
 
 const FONT = "https://raw.githubusercontent.com/google/fonts/main/ofl/alef/Alef-Regular.ttf";
@@ -193,41 +183,34 @@ export function buildDailyDoc(data, date, acct = 1) {
   };
 }
 
-async function readState() {
-  const blobs = (await listAll(P)).sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
-  if (!blobs.length) return { data: null, blobs };
-  const data = await fetch(blobs[0].url).then(r => r.json()).catch(() => null);
-  return { data, blobs };
-}
+const readState = async () => ({ data: await kvGet("manager") });
 
 // Every day that has ended gets one stored PDF (kept KEEP_DAYS days); its events are
 // then dropped from the live state so the commander board only ever shows today.
 async function finalizeManagerDays() {
-  const { data, blobs } = await readState();
+  const { data } = await readState();
   if (!data) return { days: [] };
   const today = todayIL();
   const eventDays = [...new Set((Array.isArray(data.events) ? data.events : []).map(e => dayOfMs(e.t)))];
-  const days = [...new Set([shiftDay(today, -1), ...eventDays])].filter(d => d < today).sort();
+  const yesterday = shiftDay(today, -1);
+  const stored = new Set((await q(`select day || '-' || acct as k from finals where kind = 'mgr' and day >= $1`, [yesterday])).map(r => r.k));
+  // yesterday's report is rebuilt until it exists; older days only while they still hold events
+  const days = [...new Set([yesterday, ...eventDays])].filter(d => d < today).sort();
 
   for (const d of days) {
     for (let a = 1; a <= ACCTS; a++) {
       if (!squadOf(data, a).length) continue;
-      const pdf = await tablePdf(buildDailyDoc(data, d, a));
-      await putAny(`${FINAL}${d}-a${a}.pdf`, pdf, "application/pdf");
+      if (d === yesterday && !eventDays.includes(d) && stored.has(`${d}-${a}`)) continue;
+      await putFinal({ kind: "mgr", day: d, acct: a }, await tablePdf(buildDailyDoc(data, d, a)));
     }
   }
 
   const kept = (Array.isArray(data.events) ? data.events : []).filter(e => dayOfMs(e.t) >= today);
   if (kept.length !== (data.events || []).length) {
-    data.events = kept;
-    data.rev = (Number(data.rev) || 0) + 1;
-    await putAny(`${P}${Date.now()}.json`, JSON.stringify(data));
-    if (blobs.length) await del(blobs.map(b => b.url), { token });
+    const rev = Number(data.rev) || 0;
+    await writeState({ ...data, events: kept, rev: rev + 1 }, rev); // skipped if a commander saved meanwhile; next run retries
   }
-
-  const keepFrom = shiftDay(today, -(KEEP_DAYS - 1));
-  const old = (await listAll(FINAL)).filter(b => b.pathname.slice(FINAL.length, FINAL.length + 10) < keepFrom);
-  if (old.length) await del(old.map(b => b.url), { token });
+  await pruneFinals("mgr", shiftDay(today, -(KEEP_DAYS - 1)));
   return { days };
 }
 
@@ -259,60 +242,44 @@ export default async function handler(req, res) {
     }
     if (req.method === "GET" && (req.query.finals !== undefined || req.query.final !== undefined)) {
       await finalizeManagerDays();
-      const all = (await listAll(FINAL))
-        .map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), name: b.pathname.slice(FINAL.length), url: b.url }))
-        .filter(x => x.name === `${x.date}-a${acct}.pdf`)
-        .sort((a, c) => (a.date < c.date ? 1 : -1));
-      if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: dayLabel(x.date) })) });
-      const f = all.find(x => x.date === req.query.final);
-      if (!f) return res.status(404).json({ error: "not found" });
-      const buf = Buffer.from(await (await fetch(f.url)).arrayBuffer());
+      if (req.query.finals !== undefined) return res.json({ finals: (await listFinals("mgr", acct)).map(x => ({ date: x.day, label: dayLabel(x.day) })) });
+      const buf = await getFinal("mgr", String(req.query.final), acct);
+      if (!buf) return res.status(404).json({ error: "not found" });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="daily-${f.date}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="daily-${req.query.final}.pdf"`);
       return res.end(buf);
     }
-    const IN = "soldier/inbox/", PUB = "soldier/public/";
     if (req.method === "GET" && req.query.inbox !== undefined) {
-      const bl = (await list({ prefix: IN, limit: 500, token })).blobs;
-      const items = (await Promise.all(bl.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((p, q) => p.t - q.t);
+      const items = (await q(`select item from inbox order by t limit 500`)).map(r => r.item);
       return res.json({ items });
     }
     if (req.method === "POST" && req.body?.action === "ack") {
-      const ids = new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(String));
-      const bl = (await list({ prefix: IN, limit: 500, token })).blobs.filter(x => ids.has(x.pathname.slice(IN.length).replace(/\.json$/, "")));
-      if (bl.length) await del(bl.map(x => x.url), { token });
-      return res.json({ ok: true, deleted: bl.length });
+      const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(String).slice(0, 500);
+      const r = ids.length ? await q(`delete from inbox where id = any($1::text[]) returning id`, [ids]) : [];
+      return res.json({ ok: true, deleted: r.length });
     }
     if (req.method === "POST" && req.body?.action === "publish") {
-      const body = JSON.stringify({ squad: (req.body.squad || []).slice(0, 60).map(s => String(s).slice(0, 60)), schedule: req.body.schedule || {} });
-      if (body.length > 100000) return res.status(413).json({ error: "too big" });
-      const old = (await list({ prefix: PUB, limit: 1000, token })).blobs;
-      await putAny(`${PUB}${Date.now()}.json`, body);
-      if (old.length) await del(old.map(x => x.url), { token });
+      const pub = { squad: (req.body.squad || []).slice(0, 60).map(s => String(s).slice(0, 60)), schedule: req.body.schedule || {} };
+      if (JSON.stringify(pub).length > 100000) return res.status(413).json({ error: "too big" });
+      await kvSet("public", pub);
       return res.json({ ok: true });
     }
-    const blobs = (await list({ prefix: P, limit: 1000, token })).blobs.sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
     if (req.method === "POST") {
       const incoming = req.body.data ?? null;
       // Four commanders share one document, so a write built on a stale copy would silently
       // erase everyone else's day. Reject it and hand back the current state instead.
-      const cur = blobs.length ? await fetch(blobs[0].url).then(r => r.json()).catch(() => null) : null;
+      const cur = await kvGet("manager");
       const curRev = Number(cur?.rev) || 0;
-      if (req.body.rev !== undefined && Number(req.body.rev) !== curRev) {
-        return res.status(409).json({ error: "stale", rev: curRev, data: cur, acct });
-      }
-      const next = incoming && typeof incoming === "object" ? { ...incoming, rev: curRev + 1 } : incoming;
-      const body = JSON.stringify(next);
-      if (body.length > 400000) return res.status(413).json({ error: "too big" });
-      await putAny(`${P}${Date.now()}.json`, body);
-      if (blobs.length) await del(blobs.map(b => b.url), { token });
+      const stale = () => res.status(409).json({ error: "stale", rev: curRev, data: cur, acct });
+      if (req.body.rev !== undefined && Number(req.body.rev) !== curRev) return stale();
+      if (!incoming || typeof incoming !== "object") return res.status(400).json({ error: "bad data" });
+      const next = { ...incoming, rev: curRev + 1 };
+      if (JSON.stringify(next).length > 400000) return res.status(413).json({ error: "too big" });
+      if (!(await writeState(next, curRev))) { const now = await kvGet("manager"); return res.status(409).json({ error: "stale", rev: Number(now?.rev) || 0, data: now, acct }); }
       return res.json({ ok: true, rev: curRev + 1 });
     }
-    if (!blobs.length) return res.json({ data: null, acct, accts: ACCTS });
-    const data = await fetch(blobs[0].url).then(r => r.json());
-    return res.json({ data, acct, accts: ACCTS });
+    return res.json({ data: await kvGet("manager"), acct, accts: ACCTS });
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "server", detail: !token ? "no_blob_token" : String(e?.message || e).slice(0, 200) });
+    return res.status(500).json(errorJson(e));
   }
 }

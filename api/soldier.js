@@ -1,16 +1,8 @@
-import { put, list } from "@vercel/blob";
+import { q, kvGet, errorJson } from "./_db.js";
 
-const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
-const PUB = "soldier/public/", IN = "soldier/inbox/";
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
 const KINDS = ["exit", "medical", "medstatus", "general"];
-
-async function putAny(path, body) {
-  const o = { token, addRandomSuffix: false, allowOverwrite: true, contentType: "application/json" };
-  try { return await put(path, body, { ...o, access: "public" }); }
-  catch (e) { if (!/private/i.test(String(e?.message))) throw e; return put(path, body, { ...o, access: "private" }); }
-}
 
 export default async function handler(req, res) {
   try {
@@ -20,19 +12,18 @@ export default async function handler(req, res) {
       if (b.action !== "submit" || name.length < 2 || name.length > 60 || !KINDS.includes(kind) || !text) return res.status(400).json({ error: "bad request" });
       const okDate = d => /^\d{4}-\d{2}-\d{2}$/.test(d || "");
       const until = okDate(b.until) ? b.until : "", appt = okDate(b.appt) ? b.appt : "";
-      const pending = await list({ prefix: IN, limit: 500, token });
-      if (pending.blobs.length >= 500) return res.status(429).json({ error: "inbox full" });
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await putAny(`${IN}${id}.json`, JSON.stringify({ id, t: Date.now(), name, kind, text, until, appt }));
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, t = Date.now();
+      // one statement: refuses the request once 500 requests are waiting for the commanders
+      const r = await q(`insert into inbox (id, t, item) select $1, $2, $3::jsonb where (select count(*) from inbox) < 500 returning id`,
+        [id, t, JSON.stringify({ id, t, name, kind, text, until, appt })]);
+      if (!r.length) return res.status(429).json({ error: "inbox full" });
       return res.json({ ok: true });
     }
     const date = today();
-    const blobs = (await list({ prefix: PUB, limit: 1000, token })).blobs.sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
-    if (!blobs.length) return res.json({ date, squad: [], items: [] });
-    const pub = await fetch(blobs[0].url).then(r => r.json());
+    const pub = await kvGet("public");
+    if (!pub) return res.json({ date, squad: [], items: [] });
     return res.json({ date, squad: Array.isArray(pub.squad) ? pub.squad : [], items: pub.schedule?.[date] || [] });
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "server", detail: !token ? "no_blob_token" : String(e?.message || e).slice(0, 200) });
+    return res.status(500).json(errorJson(e));
   }
 }

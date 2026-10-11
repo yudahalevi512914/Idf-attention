@@ -1,44 +1,20 @@
-import { put, list, del } from "@vercel/blob";
 import PDFDocument from "pdfkit";
+import { q, tx, kvGet, kvSet, kvDel, putFinal, listFinals, getFinal, pruneFinals, errorJson } from "./_db.js";
 
-const token = process.env.BLOB_READ_WRITE_TOKEN || Object.entries(process.env).find(([k, v]) => /READ_WRITE_TOKEN$/.test(k) && v)?.[1];
 // Same commander PINs as the manager board, so one code opens both.
 const PINS = (process.env.MANAGER_PINS || process.env.ADMIN_PIN || "5361,5362,5363,5364").split(",").map(s => s.trim()).filter(Boolean);
 const okPin = p => PINS.includes(String(p ?? ""));
-const LIST = "attendance/list/", ACT = "attendance/activity/", ARC = "attendance/archive/", DEV = "attendance/dev/", FINAL = "attendance/final/";
 const okDev = d => /^[\w-]{16,64}$/.test(d || "");
 const norm = n => String(n || "").trim().replace(/\s+/g, " ").replace(/[׳’`]/g, "'");
 const dayOf = ms => new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
-const b64 = s => Buffer.from(s).toString("base64url");
-const unb64 = s => Buffer.from(s, "base64url").toString();
 const nk0 = n => String(n).replace(/[׳’`]/g, "'");
 const cleanReasons = o => Object.fromEntries(Object.entries(o && typeof o === "object" ? o : {}).slice(0, 300).map(([k, v]) => [String(k).slice(0, 80), String(v ?? "").trim().slice(0, 120)]).filter(([, v]) => v));
 const clean = a => (Array.isArray(a) ? a.slice(0, 300).map(x => String(x).slice(0, 80)) : []);
 
-async function listAll(prefix) {
-  const out = []; let cursor;
-  do {
-    const r = await list({ prefix, limit: 1000, cursor, token });
-    out.push(...r.blobs); cursor = r.hasMore ? r.cursor : undefined;
-  } while (cursor);
-  return out;
-}
-async function putAny(path, body, contentType) {
-  const o = { token, addRandomSuffix: false, allowOverwrite: true, ...(contentType ? { contentType } : {}) };
-  try { return await put(path, body, { ...o, access: "public" }); }
-  catch (e) { if (!/private/i.test(String(e?.message))) throw e; return put(path, body, { ...o, access: "private" }); }
-}
-async function clearPrefix(prefix) {
-  const all = await listAll(prefix);
-  if (all.length) await del(all.map(b => b.url), { token });
-}
-async function getActivity() {
-  const a = await listAll(ACT);
-  return a.length ? unb64(a[0].pathname.slice(ACT.length)) : "";
-}
+const getActivity = async () => String((await kvGet("activity")) ?? "");
 const labelOf = ms => new Date(ms).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jerusalem" });
 const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
-const readReports = async blobs => (await Promise.all(blobs.map(x => fetch(x.url).then(r => r.json()).catch(() => null)))).filter(Boolean).sort((a, c) => a.t - c.t);
+const readReports = async day => (await q(`select rec from att_archive where day = $1 order by t`, [day])).map(r => r.rec);
 
 // Pushes one finished activity as a new column into the Google Sheet (via the Apps Script web app).
 async function pushSheet(rec) {
@@ -59,18 +35,12 @@ async function pushSheet(rec) {
 // Every day that has ended gets one final PDF (kept 7 days); its raw data is then deleted.
 async function finalizeDays() {
   const today = dayOf(Date.now());
-  const byDay = {};
-  for (const b of await listAll(ARC)) { const d = b.pathname.slice(ARC.length).split("/")[0]; if (d < today) (byDay[d] ||= []).push(b); }
-  for (const [day, blobs] of Object.entries(byDay)) {
-    const reports = await readReports(blobs);
-    if (!reports.length) { await del(blobs.map(x => x.url), { token }); continue; }
-    const pdf = await buildPdf({ dateLabel: labelOf(`${day}T09:00:00Z`), reports, timeOf });
-    await putAny(`${FINAL}${day}.pdf`, pdf, "application/pdf");
-    await del(blobs.map(x => x.url), { token });
+  for (const { day } of await q(`select distinct day from att_archive where day < $1`, [today])) {
+    const reports = await readReports(day);
+    if (reports.length) await putFinal({ kind: "att", day }, await buildPdf({ dateLabel: labelOf(`${day}T09:00:00Z`), reports, timeOf }));
+    await q(`delete from att_archive where day = $1`, [day]);
   }
-  const keepFrom = dayOf(Date.now() - 6 * 24 * 3600e3);
-  const old = (await listAll(FINAL)).filter(b => b.pathname.slice(FINAL.length, FINAL.length + 10) < keepFrom);
-  if (old.length) await del(old.map(b => b.url), { token });
+  await pruneFinals("att", dayOf(Date.now() - 6 * 24 * 3600e3));
 }
 
 
@@ -262,35 +232,32 @@ export default async function handler(req, res) {
       if (b.action === "activity" || b.action === "reset" || b.action === "remove") {
         if (!okPin(b.pin)) return res.status(401).json({ error: "unauthorized" });
         if (b.action === "remove") {
-          const n = norm(b.name), key = b64(n);
-          await del((await listAll(LIST + key)).filter(x => x.pathname === LIST + key).map(x => x.url), { token }).catch(() => {});
-          const devs = (await listAll(DEV)).filter(x => x.pathname.endsWith("/" + key));
-          if (devs.length) await del(devs.map(x => x.url), { token });
+          const n = norm(b.name);
+          await tx([[`delete from att_list where name = $1`, [n]], [`delete from att_dev where name = $1`, [n]]]);
           return res.json({ ok: true });
         }
         if (b.action === "activity") {
           const a = norm(b.activity).slice(0, 60);
-          await clearPrefix(ACT);
-          if (a) await putAny(ACT + b64(a), "1");
+          if (a) await kvSet("activity", a); else await kvDel("activity");
           return res.json({ ok: true, activity: a });
         }
         const now = Date.now();
         const activity = (await getActivity()) || "ללא שם";
         const rec = { activity, t: now, present: clean(b.present), missing: clean(b.missing), extra: clean(b.extra), reasons: cleanReasons(b.reasons) };
-        await putAny(`${ARC}${dayOf(now)}/${now}`, JSON.stringify(rec));
-        await clearPrefix(LIST);
-        await clearPrefix(DEV);
-        await clearPrefix(ACT);
+        await tx([
+          [`insert into att_archive (t, day, rec) values ($1, $2, $3::jsonb) on conflict (t) do nothing`, [now, dayOf(now), JSON.stringify(rec)]],
+          [`delete from att_list`], [`delete from att_dev`], [`delete from kv where k = 'activity'`],
+        ]);
         const sheet = await pushSheet(rec);
         return res.json({ ok: true, sheet });
       }
       const name = norm(b.name);
       if (name.length < 2 || name.length > 60) return res.status(400).json({ error: "bad name" });
       if (!okDev(b.dev)) return res.status(400).json({ error: "bad device" });
-      const prev = await list({ prefix: `${DEV}${b.dev}/`, token });
-      if (prev.blobs.length) return res.status(409).json({ error: "already", name: unb64(prev.blobs[0].pathname.split("/").pop()) });
-      await putAny(LIST + b64(name), "1");
-      await putAny(`${DEV}${b.dev}/${b64(name)}`, "1");
+      // one name per device: the insert only succeeds for a device that has not signed in yet
+      const claimed = await q(`insert into att_dev (dev, name) values ($1, $2) on conflict (dev) do nothing returning dev`, [b.dev, name]);
+      if (!claimed.length) return res.status(409).json({ error: "already", name: (await q(`select name from att_dev where dev = $1`, [b.dev]))[0]?.name || "" });
+      await q(`insert into att_list (name, t) values ($1, $2) on conflict (name) do update set t = excluded.t`, [name, Date.now()]);
       return res.json({ ok: true });
     }
 
@@ -304,19 +271,17 @@ export default async function handler(req, res) {
     if (req.query.finals !== undefined || req.query.final !== undefined) {
       if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
       await finalizeDays();
-      const all = (await listAll(FINAL)).map(b => ({ date: b.pathname.slice(FINAL.length, FINAL.length + 10), url: b.url })).sort((a, c) => (a.date < c.date ? 1 : -1));
-      if (req.query.finals !== undefined) return res.json({ finals: all.map(x => ({ date: x.date, label: labelOf(`${x.date}T09:00:00Z`) })) });
-      const f = all.find(x => x.date === req.query.final);
-      if (!f) return res.status(404).json({ error: "not found" });
-      const buf = Buffer.from(await (await fetch(f.url)).arrayBuffer());
+      if (req.query.finals !== undefined) return res.json({ finals: (await listFinals("att")).map(x => ({ date: x.day, label: labelOf(`${x.day}T09:00:00Z`) })) });
+      const buf = await getFinal("att", String(req.query.final));
+      if (!buf) return res.status(404).json({ error: "not found" });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="attendance-${f.date}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="attendance-${req.query.final}.pdf"`);
       return res.end(buf);
     }
     if (report !== undefined) {
       if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
       const now = Date.now(), date = dayOf(now);
-      const reports = await readReports(await listAll(`${ARC}${date}/`));
+      const reports = await readReports(date);
       if (!reports.length) return res.json({ empty: true });
       const pdf = await buildPdf({ dateLabel: labelOf(now), reports, timeOf });
       res.setHeader("Content-Type", "application/pdf");
@@ -324,26 +289,18 @@ export default async function handler(req, res) {
       return res.end(pdf);
     }
     if (name !== undefined) {
-      const activity = await getActivity();
-      let deviceName = "";
-      if (okDev(req.query.dev)) {
-        const d = await list({ prefix: `${DEV}${req.query.dev}/`, token });
-        if (d.blobs.length) deviceName = unb64(d.blobs[0].pathname.split("/").pop());
-      }
+      // one round trip: current activity, this device's name, and whether `name` is on the list
+      const [r] = await q(`select (select v #>> '{}' from kv where k = 'activity') as activity,
+        (select name from att_dev where dev = $1) as dev_name,
+        exists (select 1 from att_list where name = $2) as present`, [okDev(req.query.dev) ? req.query.dev : "", norm(name)]);
+      const activity = r?.activity || "", deviceName = r?.dev_name || "";
       if (!name) return res.json({ present: false, activity, deviceName });
-      const p = LIST + b64(norm(name));
-      const { blobs } = await list({ prefix: p, token });
-      return res.json({ present: blobs.some(x => x.pathname === p), activity, deviceName });
+      return res.json({ present: !!r?.present, activity, deviceName });
     }
     if (!okPin(pin)) return res.status(401).json({ error: "unauthorized" });
-    const blobs = await listAll(LIST);
-    return res.json({
-      activity: await getActivity(),
-      list: blobs.map(x => ({ name: unb64(x.pathname.slice(LIST.length)), t: new Date(x.uploadedAt).getTime() })),
-    });
+    const rows = await q(`select name, t from att_list order by t`);
+    return res.json({ activity: await getActivity(), list: rows.map(x => ({ name: x.name, t: Number(x.t) })) });
   } catch (e) {
-    console.error(e);
-    const m = String(e?.message || e);
-    return res.status(500).json({ error: "server", detail: !token ? "no_blob_token" : m.slice(0, 200) });
+    return res.status(500).json(errorJson(e));
   }
 }

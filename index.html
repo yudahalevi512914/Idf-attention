@@ -98,7 +98,7 @@ const call = async (qs,body) => {
   const r = await fetch("/api/attendance"+qs, body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:{});
   if(!r.ok){
     const j=await r.json().catch(()=>({}));
-    const e=new Error(r.status===401?"קוד שגוי":j.detail==="no_blob_token"?"שגיאת שרת: מאגר ה-Blob לא מחובר לפרויקט":"שגיאת שרת"+(j.detail?" ("+j.detail+")":r.status===404?" (api לא נמצא)":""));
+    const e=new Error(r.status===401?"קוד שגוי":j.detail==="no_db"?"שגיאת שרת: מסד הנתונים Neon לא מחובר לפרויקט":"שגיאת שרת"+(j.detail?" ("+j.detail+")":r.status===404?" (api לא נמצא)":""));
     e.status=r.status; e.data=j; throw e;
   }
   return r;
