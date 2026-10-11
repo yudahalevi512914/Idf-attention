@@ -1,5 +1,7 @@
 import PDFDocument from "pdfkit";
 import { q, kvGet, kvSet, putFinal, listFinals, getFinal, pruneFinals, errorJson } from "./_db.js";
+import { PDFDocument as PdfLib } from "pdf-lib";
+import { attendancePdfFor } from "./attendance.js";
 
 // One PIN per commander account. All four share the same data; only the tracked squad differs.
 // Override in production with MANAGER_PINS="a,b,c,d" rather than relying on these defaults.
@@ -9,6 +11,19 @@ const ACCTS = PINS.length;
 const KEEP_DAYS = 7;
 
 // Writes the shared state only if nobody else has saved since `curRev`; returns false when stale.
+// Daily report file = the commander report, followed by that day's attendance report
+// (activities finished so far) when there is one.
+async function dailyPdf(data, date, acct) {
+  const att = await attendancePdfFor(date).catch(e => { console.error("attendance pdf", e); return null; });
+  const doc = buildDailyDoc(data, date, acct);
+  doc.sub += att ? ` · דוח נוכחות מצורף${att.activities ? ` (${plur(att.activities, "פעילות אחת", "פעילויות")})` : ""}` : " · אין פעילויות נוכחות שהסתיימו";
+  const main = await tablePdf(doc);
+  if (!att) return main;
+  const out = await PdfLib.load(main), add = await PdfLib.load(att.pdf);
+  (await out.copyPages(add, add.getPageIndices())).forEach(p => out.addPage(p));
+  return Buffer.from(await out.save());
+}
+
 async function writeState(next, curRev) {
   const r = await q(`insert into kv (k, v) values ('manager', $1::jsonb)
     on conflict (k) do update set v = excluded.v, updated = now()
@@ -198,7 +213,7 @@ async function finalizeManagerDays() {
     for (let a = 1; a <= ACCTS; a++) {
       if (!squadOf(data, a).length) continue;
       if (d === yesterday && !eventDays.includes(d) && stored.has(`${d}-${a}`)) continue;
-      await putFinal({ kind: "mgr", day: d, acct: a }, await tablePdf(buildDailyDoc(data, d, a)));
+      await putFinal({ kind: "mgr", day: d, acct: a }, await dailyPdf(data, d, a));
     }
   }
 
@@ -232,7 +247,7 @@ export default async function handler(req, res) {
     if (req.method === "POST" && req.body?.action === "daily") {
       const date = /^\d{4}-\d{2}-\d{2}$/.test(req.body.date || "") ? req.body.date : todayIL();
       const { data } = await readState();
-      const pdf = await tablePdf(buildDailyDoc(data, date, acct));
+      const pdf = await dailyPdf(data, date, acct);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="daily-${date}.pdf"`);
       return res.end(pdf);

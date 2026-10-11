@@ -33,6 +33,15 @@ async function pushSheet(rec) {
 }
 
 // Every day that has ended gets one final PDF (kept 7 days); its raw data is then deleted.
+// The attendance PDF for one day, for embedding in the commander's daily report: built from
+// the day's finished activities while they are still raw, otherwise the stored final PDF.
+export async function attendancePdfFor(day) {
+  const reports = await readReports(day);
+  if (reports.length) return { pdf: await buildPdf({ dateLabel: labelOf(`${day}T09:00:00Z`), reports, timeOf }), activities: reports.length };
+  const stored = await getFinal("att", day);
+  return stored ? { pdf: stored, activities: null } : null;
+}
+
 async function finalizeDays() {
   const today = dayOf(Date.now());
   for (const { day } of await q(`select distinct day from att_archive where day < $1`, [today])) {
