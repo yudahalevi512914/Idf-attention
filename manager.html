@@ -129,7 +129,11 @@ async function boot(){
   }
   render();
   pullInbox().then(n=>{ if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } else pub(); });
-  setInterval(async()=>{ if(document.hidden||tab!=="today"||SH) return; const n=await pullInbox(); if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } },60000);
+  // Each check wakes the database, which then stays up ~5 minutes. So: check when the board
+  // comes back to the screen (at most every 2 minutes), and in the background only every 15.
+  const check=async()=>{ if(document.hidden||tab!=="today"||SH||Date.now()-lastPull<120000) return; const n=await pullInbox(); if(n){ toast(`${n} פניות חדשות מהחיילים`); render(); } };
+  document.addEventListener("visibilitychange",check);
+  setInterval(check,15*60000);
 }
 
 function render(){
@@ -346,10 +350,15 @@ const shiftDay=(d,n)=>new Date(new Date(d+"T12:00:00").getTime()+n*864e5).toLoca
 let pubTimer;
 function pub(){ clearTimeout(pubTimer); pubTimer=setTimeout(async()=>{ try{
   const keep={}; Object.keys(S.schedule).filter(d=>daysTo(d)>=-1).forEach(d=>keep[d]=S.schedule[d]);
-  await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",squad:SQALL(),schedule:keep})});
+  // skip the write when the soldiers' page already shows exactly this
+  const body=JSON.stringify({squad:SQALL(),schedule:keep}); if(lsGet("lastpub")===body) return;
+  const r=await fetch("/api/manager",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin,action:"publish",...JSON.parse(body)})});
+  if(r.ok) lsSet("lastpub",body);
 }catch(e){} },1200); }
 const normN=n=>String(n).replace(/[׳’`]/g,"'").replace(/\s+/g," ").trim();
+let lastPull=0;
 async function pullInbox(){
+  lastPull=Date.now();
   try{
     const r=await fetch(`/api/manager?pin=${encodeURIComponent(pin)}&inbox=1`); if(!r.ok) return 0;
     const {items}=await r.json(); if(!items||!items.length) return 0; let added=0;

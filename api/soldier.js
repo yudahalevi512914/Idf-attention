@@ -19,8 +19,11 @@ export default async function handler(req, res) {
       if (!r.length) return res.status(429).json({ error: "inbox full" });
       return res.json({ ok: true });
     }
+    // Same answer for every soldier: let Vercel's CDN serve it, so the database is asked
+    // at most once every two minutes however many phones have the page open.
     const date = today();
     const pub = await kvGet("public");
+    res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=600"); // only successful answers are cached
     if (!pub) return res.json({ date, squad: [], items: [] });
     return res.json({ date, squad: Array.isArray(pub.squad) ? pub.squad : [], items: pub.schedule?.[date] || [] });
   } catch (e) {

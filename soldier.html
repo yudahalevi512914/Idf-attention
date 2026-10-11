@@ -147,7 +147,9 @@ function renderSchedule(){
   const ev=[...info.items].sort((a,b)=>a.t.localeCompare(b.t)), now=nowIL(); let cur=-1; ev.forEach((e,i)=>{ if(e.t<=now) cur=i; });
   $("schedule-container").innerHTML=ev.length?ev.map((e,i)=>`<div class="ev ${i<cur?"past":""} ${i===cur?"now":""}"><span class="t">${esc(e.t)}</span><span class="x">${esc(e.x)}</span>${i===cur?'<span class="tag">עכשיו</span>':i===cur+1?'<span class="tag next">הבא</span>':""}</div>`).join(""):'<p class="empty">עדיין לא הוזן לו״ז להיום</p>';
 }
+let lastLoad=0;
 async function load(){
+  lastLoad=Date.now();
   try{ const r=await fetch("/api/soldier"); if(r.ok) info=await r.json(); }catch(e){}
   fillNames(); renderSchedule();
 }
@@ -195,7 +197,10 @@ $("form-general").onsubmit=e=>{ e.preventDefault();
   send("general",text,{},"פנייה כללית",e.target); };
 
 load(); renderSent();
-setInterval(()=>{ if(!document.hidden) load(); },120000);
+// The "now / next" marks move on their own; the schedule itself is fetched again only when
+// the page comes back to the screen after 10 minutes, so open phones don't keep the database awake.
+setInterval(()=>{ if(!document.hidden) renderSchedule(); },60000);
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&Date.now()-lastLoad>600000) load(); });
 </script>
 </body>
 </html>
