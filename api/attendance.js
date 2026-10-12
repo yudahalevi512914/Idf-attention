@@ -16,6 +16,12 @@ const labelOf = ms => new Date(ms).toLocaleDateString("he-IL", { weekday: "long"
 const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 const readReports = async day => (await q(`select rec from att_archive where day = $1 order by t`, [day])).map(r => r.rec);
 
+// Readable text of an HTML page (Google's error / sign-in pages), for error messages.
+const pageText = html => html.replace(/<(script|style)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&")
+  .replace(/\s+/g, " ").trim().slice(0, 160);
+const hostOf = u => { try { return new URL(u).hostname; } catch { return "?"; } };
+
 // Pushes one finished activity as a new column into the Google Sheet, through the Apps Script
 // web app in google-apps-script.gs. Returns { sheet: "ok" | "off" | "failed", sheetError }.
 async function pushSheet(rec) {
@@ -30,10 +36,10 @@ async function pushSheet(rec) {
     const txt = await r.text();
     let j = null; try { j = JSON.parse(txt); } catch {}
     if (j?.ok) return { sheet: "ok" };
-    // an HTML page here means the URL or the deployment's access setting is wrong
-    const why = j?.error || (/<html/i.test(txt) ? `Apps Script החזיר דף HTML (קוד ${r.status}) — בדוק שהכתובת מסתיימת ב-/exec ושהגישה היא Anyone` : `קוד ${r.status}`);
+    // an HTML page: show where we ended up and the page's own text, so the real cause is visible
+    const why = j?.error || (/<html/i.test(txt) ? `Apps Script החזיר דף HTML (קוד ${r.status}, ${hostOf(r.url)}): ${pageText(txt)}` : `קוד ${r.status}`);
     console.error("sheet", why);
-    return { sheet: "failed", sheetError: String(why).slice(0, 200) };
+    return { sheet: "failed", sheetError: String(why).slice(0, 300) };
   } catch (e) { console.error("sheet", e); return { sheet: "failed", sheetError: String(e?.message || e).slice(0, 200) }; }
 }
 
