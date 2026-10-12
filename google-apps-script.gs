@@ -12,7 +12,7 @@
 // later week (weeks start on Saturday), it first creates "שבוע N+1" from the current tab:
 // same names and layout, empty checkboxes.
 
-const SECRET = ""; // same value as SHEET_SECRET in Vercel; leave "" if you didn't set one
+var SECRET = ""; // same value as SHEET_SECRET in Vercel; leave "" if you didn't set one
 
 function doPost(e) {
   try {
