@@ -16,20 +16,25 @@ const labelOf = ms => new Date(ms).toLocaleDateString("he-IL", { weekday: "long"
 const timeOf = t => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 const readReports = async day => (await q(`select rec from att_archive where day = $1 order by t`, [day])).map(r => r.rec);
 
-// Pushes one finished activity as a new column into the Google Sheet (via the Apps Script web app).
+// Pushes one finished activity as a new column into the Google Sheet, through the Apps Script
+// web app in google-apps-script.gs. Returns { sheet: "ok" | "off" | "failed", sheetError }.
 async function pushSheet(rec) {
   const url = process.env.SHEET_URL;
-  if (!url) return "off";
-  const date = dayOf(rec.t), noon = Date.parse(`${date}T12:00:00Z`), dow = new Date(noon).getUTCDay();
-  const d0 = noon - dow * 864e5, fm = ms => { const i = new Date(ms).toISOString(); return `${i.slice(8, 10)}.${i.slice(5, 7)}`; };
+  if (!url) return { sheet: "off" };
+  const d = dayOf(rec.t), date = `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(2, 4)}`; // 12.10.26, like the sheet
   const reasons = new Map(Object.entries(rec.reasons || {}).map(([n, t]) => [nk0(n), t]));
   const rows = [...rec.present.map(n => ({ name: n, value: true })), ...rec.missing.map(n => ({ name: n, value: reasons.get(nk0(n)) || false }))];
   try {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, signal: AbortSignal.timeout(20000),
-      body: JSON.stringify({ secret: process.env.SHEET_SECRET || "", sheetName: `שבוע ${fm(d0)}-${fm(d0 + 6 * 864e5)}`, dateLabel: fm(noon), header: `${rec.activity}\n${timeOf(rec.t)}`, rows }) });
-    const j = await r.json().catch(() => null);
-    return j?.ok ? "ok" : "failed";
-  } catch (e) { console.error("sheet", e); return "failed"; }
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, signal: AbortSignal.timeout(25000),
+      body: JSON.stringify({ secret: process.env.SHEET_SECRET || "", date, activity: rec.activity, time: timeOf(rec.t), rows }) });
+    const txt = await r.text();
+    let j = null; try { j = JSON.parse(txt); } catch {}
+    if (j?.ok) return { sheet: "ok" };
+    // an HTML page here means the URL or the deployment's access setting is wrong
+    const why = j?.error || (/<html/i.test(txt) ? `Apps Script החזיר דף HTML (קוד ${r.status}) — בדוק שהכתובת מסתיימת ב-/exec ושהגישה היא Anyone` : `קוד ${r.status}`);
+    console.error("sheet", why);
+    return { sheet: "failed", sheetError: String(why).slice(0, 200) };
+  } catch (e) { console.error("sheet", e); return { sheet: "failed", sheetError: String(e?.message || e).slice(0, 200) }; }
 }
 
 // Every day that has ended gets one final PDF (kept 7 days); its raw data is then deleted.
@@ -264,8 +269,7 @@ export default async function handler(req, res) {
           [`insert into att_archive (t, day, rec) values ($1, $2, $3::jsonb) on conflict (t) do nothing`, [now, dayOf(now), JSON.stringify(rec)]],
           [`delete from att_list`], [`delete from att_dev`], [`delete from kv where k = 'activity'`],
         ]);
-        const sheet = await pushSheet(rec);
-        return res.json({ ok: true, sheet });
+        return res.json({ ok: true, ...(await pushSheet(rec)) });
       }
       const name = norm(b.name);
       if (name.length < 2 || name.length > 60) return res.status(400).json({ error: "bad name" });

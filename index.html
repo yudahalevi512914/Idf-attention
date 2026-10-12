@@ -258,7 +258,8 @@ async function admin(){
     try{
       const reasons={}; missing.forEach(m=>{ const r=reasonOf(m); if(r) reasons[m]=r; });
       const res=await jcall("",{action:"reset",pin,present:here.map(h=>h.name),missing,extra:extra.map(h=>h.name),reasons});
-      saveRS({}); if(res.sheet==="failed") alert("הפעילות נשמרה, אבל העדכון ל-Google Sheets נכשל. בדוק את ההגדרות."); admin();
+      saveRS({}); if(res.sheet==="failed") alert("הפעילות נשמרה, אבל העדכון ל-Google Sheets נכשל:\n"+(res.sheetError||"סיבה לא ידועה"));
+      else if(res.sheet==="off"&&!sessionStorage.getItem("sheetoff")){ sessionStorage.setItem("sheetoff","1"); alert("הפעילות נשמרה. הסנכרון ל-Google Sheets לא מוגדר (חסר SHEET_URL ב-Vercel)."); } admin();
     }catch(e){ alert(e.message); }
   };
   document.getElementById("pdf").onclick=e=>makePdf(pin,e.currentTarget);
